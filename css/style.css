@@ -15,36 +15,28 @@
   --bg-subpanel:    #1a2535;   /* sub-sections inside panels */
   --bg-card:        #1e2d40;   /* incident / module cards */
   --bg-map-overlay: rgba(13, 17, 23, 0.88); /* semi-transparent overlays on map */
-
   /* Borders */
   --border-color:   #2a3a50;
   --border-radius:  6px;
-
   /* Text */
   --text-primary:   #e2eaf4;
   --text-secondary: #7a93b0;
   --text-accent:    #ffffff;
-
   /* Accent colours */
   --accent-red:     #e02020;   /* Red Cross / critical */
   --accent-orange:  #e07820;   /* warning */
   --accent-green:   #20c060;   /* ok / free */
   --accent-blue:    #1e90ff;   /* info / primary action */
-
   /* Top bar */
   --topbar-bg:      #0a0f15;
   --topbar-height:  48px;
-
   /* Orari row */
   --orari-height:   44px;
-
   /* Left menu strip */
   --menu-strip-width: 44px;
-
   /* Side panels */
   --panel-left-width:  200px;
   --panel-right-width: 200px;
-
   /* Typography */
   --font-ui:    'Courier New', Courier, monospace; /* monospace = control-room feel */
   --font-size-sm:   11px;
@@ -52,7 +44,6 @@
   --font-size-md:   15px;
   --font-size-lg:   18px;
 }
-
 
 /* ----------------------------------------------------------------
    2. RESET & BASE
@@ -119,6 +110,7 @@ button { cursor: pointer; font-family: var(--font-ui); }
 ---------------------------------------------------------------- */
 #orari-row {
   height: var(--orari-height);
+  width: var(--panel-soccorsi);
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -126,7 +118,7 @@ button { cursor: pointer; font-family: var(--font-ui); }
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border-color);
   padding: 0 8px;
-  gap: 8px;
+  gap: 15px;
 }
 
 /* The two orario boxes sit roughly over the left & right panels */
@@ -155,12 +147,9 @@ button { cursor: pointer; font-family: var(--font-ui); }
   color: var(--accent-blue);
   letter-spacing: 2px;
 }
-
-/* Spacer grows to fill the center (map column) space */
-#orari-spacer {
-  flex: 1;
+#orario-1 {
+  margin-left: 250px; 
 }
-
 
 /* ----------------------------------------------------------------
    6. MAIN BODY — horizontal flex row
