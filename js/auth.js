@@ -14,8 +14,8 @@ async function boot() {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   }
 
-  // Check for existing Supabase session
-  const { data: { session } } = await supabase.auth.getSession();
+  // Check for existing db session
+  const { data: { session } } = await db.auth.getSession();
 
   if (!session) {
     showScreen('screen-login');
@@ -32,7 +32,7 @@ async function boot() {
    Used on page load when session already exists.
 ---------------------------------------------------------------- */
 async function restoreResourceFromSession(email) {
-  const { data: resource } = await supabase
+  const { data: resource } = await db
     .from('resources')
     .select('*, event_radio_channels(channel_name, description)')
     .eq('user_email', email)
@@ -40,14 +40,14 @@ async function restoreResourceFromSession(email) {
 
   if (!resource) {
     // Resource not found — session is stale, sign out
-    await supabase.auth.signOut();
+    await db.auth.signOut();
     showScreen('screen-login');
     return;
   }
 
   STATE.resource = resource;
 
-  const { data: event } = await supabase
+  const { data: event } = await db
     .from('events')
     .select('*')
     .eq('is_active', true)
@@ -81,16 +81,16 @@ async function handleLogin(e) {
   btn.textContent = 'Accesso...';
 
   try {
-    // 1. Sign in with Supabase Auth
+    // 1. Sign in with db Auth
     const { data: authData, error: authError } =
-      await supabase.auth.signInWithPassword({ email, password });
+      await db.auth.signInWithPassword({ email, password });
 
     if (authError) throw new Error('Email o password errati.');
 
     STATE.session = authData.session;
 
     // 2. Find the resource linked to this email
-    const { data: resource, error: resError } = await supabase
+    const { data: resource, error: resError } = await db
       .from('resources')
       .select('*, event_radio_channels(channel_name, description)')
       .eq('user_email', email)
@@ -110,7 +110,7 @@ async function handleLogin(e) {
     STATE.resource = resource;
 
     // 4. Load active event
-    const { data: event } = await supabase
+    const { data: event } = await db
       .from('events')
       .select('*')
       .eq('is_active', true)
@@ -137,7 +137,7 @@ async function loadPersonnelScreen() {
     STATE.resource.resource;
 
   // Load present crew members
-  const { data: personnel } = await supabase
+  const { data: personnel } = await db
     .from('personnel')
     .select('id, name, surname, role')
     .eq('resource', STATE.resource.id)
@@ -183,7 +183,7 @@ function selectPersonnel(p) {
    LOGOUT
 ---------------------------------------------------------------- */
 async function logout() {
-  await supabase.auth.signOut();
+  await db.auth.signOut();
   sessionStorage.removeItem('wai_personnel');
   STATE.resource = STATE.event = STATE.personnel = STATE.session = null;
   STATE.incidents = [];

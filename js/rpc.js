@@ -13,7 +13,7 @@
 async function fetchIncidents() {
   if (STATE.resource.resource_type === 'LDC') {
     // Coordinator: get all resources in their sector first
-    const { data: sectorResources } = await supabase
+    const { data: sectorResources } = await db
       .from('resources')
       .select('id')
       .eq('event_id', STATE.resource.event_id)
@@ -24,7 +24,7 @@ async function fetchIncidents() {
     resourceIds.push(STATE.resource.id);
 
     // Get all incidents where any of these resources has a response
-    const { data: responses } = await supabase
+    const { data: responses } = await db
       .from('incident_responses')
       .select('incident_id')
       .in('resource_id', resourceIds);
@@ -32,7 +32,7 @@ async function fetchIncidents() {
     const incidentIds = [...new Set((responses || []).map(r => r.incident_id))];
     if (incidentIds.length === 0) return [];
 
-    const { data: incidents } = await supabase
+    const { data: incidents } = await db
       .from('incidents')
       .select('id, incident_type, status, current_triage, patient_name, patient_identifier, patient_age, patient_gender, created_at, reported_by_resource_id')
       .in('id', incidentIds)
@@ -42,7 +42,7 @@ async function fetchIncidents() {
 
   } else {
     // Regular resource: only incidents they have a response on
-    const { data: responses } = await supabase
+    const { data: responses } = await db
       .from('incident_responses')
       .select('incident_id')
       .eq('resource_id', STATE.resource.id)
@@ -51,7 +51,7 @@ async function fetchIncidents() {
     const incidentIds = [...new Set((responses || []).map(r => r.incident_id))];
     if (incidentIds.length === 0) return [];
 
-    const { data: incidents } = await supabase
+    const { data: incidents } = await db
       .from('incidents')
       .select('id, incident_type, status, current_triage, patient_name, patient_identifier, patient_age, patient_gender, created_at')
       .in('id', incidentIds)
@@ -63,7 +63,7 @@ async function fetchIncidents() {
 
 // Load full incident detail including responses and assessments
 async function fetchIncidentDetail(incidentId) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('incidents')
     .select(`
       *,
@@ -91,7 +91,7 @@ async function createIncident(params) {
     return { offline: true };
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .rpc('create_incident_with_assessment', params);
 
   if (error) throw error;
@@ -100,7 +100,7 @@ async function createIncident(params) {
 
 // Update a response outcome (close/transport/release)
 async function updateResponseOutcome(responseId, outcome, extraFields = {}) {
-  const { error } = await supabase
+  const { error } = await db
     .from('incident_responses')
     .update({
       outcome,
@@ -114,7 +114,7 @@ async function updateResponseOutcome(responseId, outcome, extraFields = {}) {
 
 // Find the active (treating) response for the current resource on a given incident
 async function findActiveResponse(incidentId) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('incident_responses')
     .select('id')
     .eq('incident_id', incidentId)
@@ -130,7 +130,7 @@ async function findActiveResponse(incidentId) {
    PERSONNEL & CREW
 ---------------------------------------------------------------- */
 async function fetchCrew() {
-  const { data } = await supabase
+  const { data } = await db
     .from('personnel')
     .select('id, name, surname, role')
     .eq('resource', STATE.resource.id)
@@ -144,7 +144,7 @@ async function fetchCrew() {
    RESOURCES (for coordinator sector view)
 ---------------------------------------------------------------- */
 async function fetchSectorResources() {
-  const { data } = await supabase
+  const { data } = await db
     .from('resources')
     .select('id, resource, resource_type, resources_current_status(status, active_responses)')
     .eq('event_id', STATE.resource.event_id)
@@ -157,7 +157,7 @@ async function fetchSectorResources() {
    LOCATION
 ---------------------------------------------------------------- */
 async function insertLocation(coords) {
-  const { error } = await supabase
+  const { error } = await db
     .from('location_history')
     .insert({
       resource_id: STATE.resource.id,
@@ -190,7 +190,7 @@ async function replayOfflineQueue() {
   for (const item of queue) {
     try {
       if (item.fn === 'create_incident_with_assessment') {
-        await supabase.rpc(item.fn, item.params);
+        await db.rpc(item.fn, item.params);
       }
       // Add other queued function types here as needed
     } catch (err) {

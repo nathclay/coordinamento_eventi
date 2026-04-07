@@ -46,7 +46,7 @@ function subscribeRealtime() {
     .subscribe();
 
   // Resource status channel — filtered to this resource only
-  supabase
+  db
     .channel('mobile-resource-status')
     .on('postgres_changes', {
       event:  '*',
@@ -60,7 +60,7 @@ function subscribeRealtime() {
 }
 
 function unsubscribeRealtime() {
-  supabase.removeAllChannels();
+  db.removeAllChannels();
   subscribed = false;
   listeners.incidents        = [];
   listeners.resources_status = [];

@@ -444,11 +444,33 @@
   11. auth.js     — login flow (last, calls into all other modules)
 ============================================================ -->
 
-<!-- CDN libraries -->
+<!-- CDN libraries 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script> -->
 
-<!-- WAI modules -->
+<!-- WAI modules 
+<script src="js/supabase.js"></script>
+<script src="js/state.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/rpc.js"></script>
+<script src="js/realtime.js"></script>
+<script src="js/location.js"></script>
+<script src="js/map.js"></script>
+<script src="js/views/incidents.js"></script>
+<script src="js/views/main.js"></script>
+<script src="js/auth.js"></script> -->
+
+<!-- Boot 
+<script>
+  // Move CDN scripts to run before DOMContentLoaded by using window.load.
+  // window.load fires after ALL scripts are parsed — safe to call supabase.
+  window.addEventListener("load", function() {
+    initAuth();   // wire up login form + personnel skip button
+    boot();       // check existing session, show correct screen
+  });
+</script> -->
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="js/supabase.js"></script>
 <script src="js/state.js"></script>
 <script src="js/ui.js"></script>
@@ -459,16 +481,14 @@
 <script src="js/views/incidents.js"></script>
 <script src="js/views/main.js"></script>
 <script src="js/auth.js"></script>
-
-<!-- Boot -->
 <script>
-  // Move CDN scripts to run before DOMContentLoaded by using window.load.
-  // window.load fires after ALL scripts are parsed — safe to call supabase.
-  window.addEventListener("load", function() {
-    initAuth();   // wire up login form + personnel skip button
-    boot();       // check existing session, show correct screen
-  });
+window.addEventListener('load', function() {
+  console.log('auth.js:', typeof boot, typeof handleLogin, typeof loadPersonnelScreen);
+  initAuth();
+  boot();
+});
 </script>
+
 
 </body>
 </html>
