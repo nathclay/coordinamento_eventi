@@ -262,12 +262,12 @@ async function executeOutcome(responseId, outcomeData) {
       p_to_resource_id:   toResourceId,
       p_to_personnel_id:  null,   // receiving team's personnel unknown at handoff time
       p_outcome:          dbOutcome,
-      p_notes:            description || null,
+      p_notes:            notes || null,
       p_hospital_info:    hospitalInfo ? JSON.stringify(hospitalInfo) : null,
     });
   } else {
     await updateResponseOutcome(responseId, dbOutcome, {
-      description:        description        || null,
+      notes:        notes        || null,
       hospital_info: hospitalInfo || null,
     });
   }
