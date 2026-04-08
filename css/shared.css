@@ -1,51 +1,51 @@
 /* ================================================================
-   WAI — shared.css
+   shared.css
    CSS variables shared across mobile.html, pca.html, pma.html
    Import this first in every page.
 ================================================================ */
 
 :root {
   /* Backgrounds */
-  --bg-page:        #0a0f15;
-  --bg-panel:       #111820;
-  --bg-card:        #161f2b;
-  --bg-card-hover:  #1a2535;
-  --bg-input:       #0d1520;
+  --bg-page:        #f0f2f5;
+  --bg-panel:       #ffffff;
+  --bg-card:        #f8f9fb;
+  --bg-card-hover:  #eef0f4;
+  --bg-input:       #ffffff;
 
-  /* Borders */
-  --border:         #1e2d40;
-  --border-bright:  #2a3a50;
+ /* Borders — visible but not heavy */
+  --border:         #d0d6de;
+  --border-bright:  #b0bac6;
 
-  /* Text */
-  --text-primary:   #e2eaf4;
-  --text-secondary: #5a7a9a;
-  --text-muted:     #334455;
-  --text-white:     #ffffff;
+  /* Text — near-black for maximum contrast */
+  --text-primary:   #1a2030;
+  --text-secondary: #4a5a70;
+  --text-muted:     #8a9ab0;
+  --text-white:     #1a2030;  
 
-  /* Accent colours */
-  --red:            #e02020;
-  --red-dark:       #9a0f0f;
-  --red-dim:        rgba(224,32,32,0.12);
-  --orange:         #e07820;
-  --orange-dim:     rgba(224,120,32,0.12);
-  --yellow:         #d4b800;
-  --yellow-dim:     rgba(212,184,0,0.12);
-  --green:          #20c060;
-  --green-dim:      rgba(32,192,96,0.12);
-  --blue:           #1e7fff;
-  --blue-dim:       rgba(30,127,255,0.12);
-  --grey:           #445566;
+  /* Accent colours — */
+  --red:            #cc1a1a;
+  --red-dark:       #8a0f0f;
+  --red-dim:        rgba(204,26,26,0.10);
+  --orange:         #cc6a10;
+  --orange-dim:     rgba(204,106,16,0.10);
+  --yellow:         #b89a00;
+  --yellow-dim:     rgba(184,154,0,0.10);
+  --green:          #18a050;
+  --green-dim:      rgba(24,160,80,0.10);
+  --blue:           #1060cc;
+  --blue-dim:       rgba(16,96,204,0.10);
+  --grey:           #6a7a8a;
 
-  /* Triage colours */
-  --triage-red:     #e02020;
-  --triage-yellow:  #d4b800;
-  --triage-green:   #20c060;
-  --triage-white:   #c8d8e8;
+  /* Triage */
+  --triage-red:     #cc1a1a;
+  --triage-yellow:  #b89a00;
+  --triage-green:   #18a050;
+  --triage-white:   #6a7a8a;
 
-  /* Typography */
-  --font:           'Courier New', Courier, monospace;
+  /* Typography — system UI font, clean and legible everywhere */
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
-  /* Geometry */
-  --radius:         8px;
-  --radius-lg:      14px;
+  /* Geometry — slightly larger radius feels more modern on light */
+  --radius:         10px;
+  --radius-lg:      16px;
 }

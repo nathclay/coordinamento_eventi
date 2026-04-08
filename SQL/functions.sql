@@ -9,7 +9,6 @@ CREATE OR REPLACE FUNCTION create_incident_with_assessment(
   p_patient_age           INTEGER,
   p_patient_gender        TEXT,
   p_patient_identifier    TEXT,
-  p_situation_notes       TEXT,
   p_initial_outcome       response_outcome_enum,
   -- assessment fields
   p_conscious             BOOLEAN,
@@ -21,6 +20,7 @@ CREATE OR REPLACE FUNCTION create_incident_with_assessment(
   p_spo2                  INTEGER,
   p_breathing_rate        INTEGER,
   p_triage                triage_enum,
+  p_description           TEXT,
   p_clinical_notes        TEXT
 )
 RETURNS JSON AS $$
@@ -40,12 +40,12 @@ BEGIN
   INSERT INTO incidents (
     event_id, incident_type, geom,
     patient_name, patient_age, patient_gender, patient_identifier,
-    notes, reported_by_resource_id, initial_outcome
+    description, reported_by_resource_id, initial_outcome
   )
   VALUES (
     p_event_id, p_incident_type, v_geom,
     p_patient_name, p_patient_age, p_patient_gender, p_patient_identifier,
-    p_situation_notes, p_resource_id, p_initial_outcome
+    p_description, p_resource_id, p_initial_outcome
   )
   RETURNING id INTO v_incident_id;
 
@@ -71,7 +71,7 @@ BEGIN
     assessed_by,
     conscious, respiration, circulation, walking, minor_injuries,
     heart_rate, spo2, breathing_rate,
-    triage, notes,
+    triage, description, clinical_notes,
     geom
   )
   VALUES (
@@ -79,7 +79,7 @@ BEGIN
     p_personnel_id,
     p_conscious, p_respiration, p_circulation, p_walking, p_minor_injuries,
     p_heart_rate, p_spo2, p_breathing_rate,
-    p_triage, p_clinical_notes,
+    p_triage, p_description, p_clinical_notes,
     v_geom
   );
 

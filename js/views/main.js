@@ -60,6 +60,7 @@ async function loadMainView() {
   await Promise.all([
     loadCrew(),
     loadIncidents(),
+    loadCoordinatorSection(),
     r.resource_type === 'LDC' ? loadSectorResources() : Promise.resolve(),
   ]);
   //status
@@ -93,6 +94,88 @@ async function loadMainView() {
 
   // Show the main view
   showScreen('screen-main');
+}
+
+async function loadPositionSection() {
+  const container = document.getElementById('mini-map-container');
+  if (!container) return;
+
+  const rcs = await fetchResourcePosition();
+   if (rcs?.geom) {
+    const coords = rcs.geom.coordinates;
+    const lat = coords[1].toFixed(5);
+    const lng = coords[0].toFixed(5);
+
+    const label = rcs.type === 'live'
+      ? `✓ Posizione inviata al PCA — ${new Date(rcs.updated_at).toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit'})}`
+      : '📍 Posizione iniziale del modulo';
+
+    const labelColor = rcs.type === 'live' ? 'var(--green)' : 'var(--text-secondary)';
+
+
+    container.innerHTML = `
+    <div style="font-size:11px;color:${labelColor};font-weight:600;margin-bottom:6px;">
+      ${label}
+    </div>
+    <div style="margin-top:8px;border-radius:var(--radius);overflow:hidden;">
+      <iframe
+        style="width:100%;height:180px;border:none;display:block;"
+        src="https://www.openstreetmap.org/export/embed.html?bbox=${parseFloat(lng)-0.002},${parseFloat(lat)-0.002},${parseFloat(lng)+0.002},${parseFloat(lat)+0.002}&layer=mapnik&marker=${lat},${lng}">
+      </iframe>
+    </div>
+    <div style="font-size:11px;color:var(--text-secondary);margin-top:4px;margin-bottom:8px;">
+      ${lat}, ${lng}
+    </div>
+    <button id="btn-send-position" style="
+      width:100%;padding:12px;border-radius:var(--radius);
+      border:1.5px solid var(--border-bright);background:var(--bg-card);
+      color:var(--text-primary);font-size:13px;font-weight:600;
+      font-family:var(--font);cursor:pointer;text-align:center;">
+      📍 Invia posizione attuale
+    </button>`;
+
+
+    document.getElementById('btn-send-position')
+      ?.addEventListener('click', async () => {
+        const btn = document.getElementById('btn-send-position');
+        btn.textContent = '📍 Localizzazione...';
+        try {
+          const pos = await getCurrentPosition();
+          await insertLocation(pos.coords);
+          showToast('Posizione inviata ✓', 'success');
+          loadPositionSection();
+        } catch (_) {
+          btn.textContent = '📍 Invia posizione attuale';
+          showToast('GPS non disponibile', 'error');
+        }
+      });
+
+  } else {
+    // No position at all
+    container.innerHTML = `
+      <button id="btn-send-position" style="
+        width:100%;padding:14px;border-radius:var(--radius);
+        border:1.5px solid var(--border-bright);background:var(--bg-card);
+        color:var(--text-primary);font-size:13px;font-weight:600;
+        font-family:var(--font);cursor:pointer;text-align:center;">
+        📍 Invia posizione attuale
+      </button>`;
+
+    document.getElementById('btn-send-position')
+      ?.addEventListener('click', async () => {
+        const btn = document.getElementById('btn-send-position');
+        btn.textContent = '📍 Localizzazione...';
+        try {
+          const pos = await getCurrentPosition();
+          await insertLocation(pos.coords);
+          showToast('Posizione inviata ✓', 'success');
+          loadPositionSection();
+        } catch (_) {
+          btn.textContent = '📍 Invia posizione attuale';
+          showToast('GPS non disponibile', 'error');
+        }
+      });
+  }
 }
 
 /* ----------------------------------------------------------------
@@ -150,20 +233,93 @@ async function loadCrew() {
     return;
   }
 
+  // Header row
+  list.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;
+      padding:6px 0;border-bottom:2px solid var(--border-bright);margin-bottom:4px;">
+      <div style="font-size:10px;font-weight:700;letter-spacing:1px;
+        color:var(--text-secondary);text-transform:uppercase;">Nome</div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:1px;
+        color:var(--text-secondary);text-transform:uppercase;">Numero</div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:1px;
+        color:var(--text-secondary);text-transform:uppercase;">Ruolo</div>
+    </div>`;
+
   crew.forEach(p => {
     const isMe = STATE.personnel && STATE.personnel.id === p.id;
     const row  = document.createElement('div');
-    row.className = 'crew-member-row';
+    row.style.cssText = `display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;
+      padding:8px 0;border-bottom:1px solid var(--border);align-items:center;`;
+
     row.innerHTML = `
-      <div class="crew-avatar ${isMe ? 'is-me' : ''}">👤</div>
-      <div class="crew-name">${p.name} ${p.surname}</div>
-      <div class="crew-role">${p.role || ''}</div>
-      ${isMe ? '<span class="you-badge">TU</span>' : ''}
+      <div style="font-size:13px;font-weight:${isMe ? 'bold' : '500'};
+        color:var(--text-primary);">
+        ${p.name} ${p.surname}
+        ${isMe ? '<span style="font-size:9px;color:var(--blue);background:var(--blue-dim);border-radius:4px;padding:1px 5px;margin-left:4px;font-weight:bold;">TU</span>' : ''}
+      </div>
+      <div>
+        ${p.number ? `
+          <a href="tel:${p.number}" style="font-size:13px;color:var(--blue);
+            font-weight:600;text-decoration:none;">
+            📞 ${p.number}
+          </a>` : '<span style="font-size:12px;color:var(--text-muted);">—</span>'}
+      </div>
+      <div style="font-size:12px;color:var(--text-secondary);
+        font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">
+        ${p.role || '—'}
+      </div>
     `;
     list.appendChild(row);
+
   });
 }
 
+async function loadCoordinatorSection() {
+  const block = document.getElementById('coordinator-crew-block');
+  if (!block) return;
+
+  const result = await fetchCoordinatorCrew();
+
+  if (!result) {
+    block.style.display = 'none';
+    return;
+  }
+
+  block.style.display = 'block';
+  block.innerHTML = `
+    <div class="section-label">Coordinatore di zona</div>
+    <div style="font-size:15px;font-weight:bold;color:var(--text-primary);
+      margin-bottom:10px;">
+      ${result.coordinator.resource}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;
+      padding:6px 0;border-bottom:2px solid var(--border-bright);margin-bottom:4px;">
+      <div style="font-size:10px;font-weight:700;letter-spacing:1px;
+        color:var(--text-secondary);text-transform:uppercase;">Nome</div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:1px;
+        color:var(--text-secondary);text-transform:uppercase;">Numero</div>
+      <div style="font-size:10px;font-weight:700;letter-spacing:1px;
+        color:var(--text-secondary);text-transform:uppercase;">Ruolo</div>
+    </div>
+    ${result.crew.map(p => `
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;
+        padding:8px 0;border-bottom:1px solid var(--border);align-items:center;">
+        <div style="font-size:13px;font-weight:500;color:var(--text-primary);">
+          ${p.name} ${p.surname}
+        </div>
+        <div>
+          ${p.number ? `<a href="tel:${p.number}" style="font-size:13px;color:var(--blue);
+            font-weight:600;text-decoration:none;">📞 ${p.number}</a>`
+            : '<span style="font-size:12px;color:var(--text-muted);">—</span>'}
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);
+          font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">
+          ${p.role || '—'}
+        </div>
+      </div>`
+    ).join('')}
+  `;
+}
 /* ----------------------------------------------------------------
    SECTOR RESOURCES (coordinator only)
 ---------------------------------------------------------------- */
@@ -229,7 +385,11 @@ function switchTab(targetId) {
     p.classList.toggle('active', p.id === targetId)
   );
 
-  // Invalidate Leaflet maps when switching to their panels
-  if (targetId === 'panel-map')  { initCoordinatorMap(); invalidateCoordinatorMap(); }
-  if (targetId === 'panel-info') { initMiniMap(); invalidateMiniMap(); }
+  if (targetId === 'panel-info') {
+    loadPositionSection();  // ← reload when tab becomes visible
+  }
+  if (targetId === 'panel-map' && STATE.resource?.resource_type === 'LDC') {
+    initCoordinatorMap();
+    invalidateCoordinatorMap();
+  }
 }

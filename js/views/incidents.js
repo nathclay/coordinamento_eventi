@@ -90,7 +90,10 @@ function buildIncidentCard(inc) {
   const patient   = inc.patient_name || inc.patient_identifier || 'Paziente sconosciuto';
   const time      = new Date(inc.created_at)
     .toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-
+  const resources = (inc.incident_responses || [])
+    .map(r => r.resources?.resource)
+    .filter(Boolean)
+    .filter((v, i, a) => a.indexOf(v) === i);
   card.innerHTML = `
     <div class="incident-card-top">
       <div class="triage-bar ${triage}"></div>
@@ -106,7 +109,9 @@ function buildIncidentCard(inc) {
       </span>
     </div>
     <div class="incident-card-footer">
-      <span class="incident-footer-resource">${STATE.resource.resource}</span>
+      <span class="incident-footer-resource">
+        ${resources.join(' · ') || STATE.resource.resource}
+      </span>
       <span class="incident-footer-time">${time}</span>
     </div>
   `;
@@ -257,12 +262,12 @@ async function executeOutcome(responseId, outcomeData) {
       p_to_resource_id:   toResourceId,
       p_to_personnel_id:  null,   // receiving team's personnel unknown at handoff time
       p_outcome:          dbOutcome,
-      p_notes:            notes || null,
+      p_notes:            description || null,
       p_hospital_info:    hospitalInfo ? JSON.stringify(hospitalInfo) : null,
     });
   } else {
     await updateResponseOutcome(responseId, dbOutcome, {
-      notes:        notes        || null,
+      description:        description        || null,
       hospital_info: hospitalInfo || null,
     });
   }
@@ -350,7 +355,7 @@ function resetIncidentForm() {
   if (slider) slider.value = 0;
   const brVal = document.getElementById('f-br-val');
   if (brVal) brVal.textContent = '—';
-  ['f-patient-name','f-patient-id','f-clinical-notes','f-situation-notes',
+  ['f-patient-name','f-patient-id','f-clinical-notes','f-description',
    'f-heart-rate','f-spo2','f-gcs'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
@@ -383,7 +388,7 @@ async function submitIncident() {
   if (STATE.formData.circulation === null) {
     showToast('Indica il circolo', 'error'); return;
   }
-  if (!document.getElementById('f-situation-notes')?.value.trim()) {
+  if (!document.getElementById('f-description')?.value.trim()) {
     showToast('Inserisci una descrizione', 'error'); return;
   }
   if (CLINICAL_TYPES.includes(STATE.resource.resource_type) && !STATE.formData.triage) {
@@ -425,7 +430,7 @@ async function submitIncident() {
       p_patient_age:        ageVal !== '' ? parseInt(ageVal) : null,
       p_patient_gender:     STATE.formData.gender                                || null,
       p_patient_identifier: document.getElementById('f-patient-id')?.value      || null,
-      p_situation_notes:    document.getElementById('f-situation-notes')?.value || null,
+      p_description:    document.getElementById('f-description')?.value || null,
       p_initial_outcome:    initialOutcome,
       p_conscious:          STATE.formData.conscious,
       p_respiration:        STATE.formData.respiration,
@@ -531,6 +536,9 @@ async function openIncidentDetail(incidentId) {
       openAssessmentForm(incidentId, latest);
     });
 
+  document.getElementById('btn-edit-patient')
+    ?.addEventListener('click', () => openEditPatient(inc));
+
   document.getElementById('btn-reopen-incident')
     ?.addEventListener('click', () => reopenIncident(incidentId));
 
@@ -556,30 +564,51 @@ async function buildDetailHTML(inc) {
   const assessmentHTML = assessments.length === 0
     ? '<div class="empty-state"><div class="empty-text">Nessuna valutazione</div></div>'
     : assessments.map(a => `
-      <div class="assessment-entry">
-        <div class="assessment-header">
-          <span class="assessment-by">Valutazione</span>
-          <span class="assessment-time">
-            ${new Date(a.assessed_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
-          </span>
+      <div style="background:var(--bg-card);border:1.5px solid var(--border-bright);
+      border-radius:var(--radius-lg);padding:12px;margin-bottom:10px;">
+      <div class="assessment-header">
+        <span class="assessment-by">Valutazione</span>
+        <span class="assessment-time">
+          ${new Date(a.assessed_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
+        </span>
+      </div>
+      ${a.description ? `
+      <div style="margin-top:8px;">
+        <div style="font-size:10px;letter-spacing:1.5px;color:var(--text-secondary);
+          text-transform:uppercase;font-weight:700;margin-bottom:4px;">Descrizione</div>
+        <div style="font-size:13px;color:var(--text-primary);line-height:1.5;
+          padding:8px 10px;background:var(--bg-card);
+          border-radius:var(--radius);border:1px solid var(--border);">
+          ${a.description}
         </div>
-        <!-- Condizioni base: si/no -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
-          <div class="vital-box"><div class="vital-label">Cosciente</div><div class="vital-value">${yn(a.conscious)}</div></div>
-          <div class="vital-box"><div class="vital-label">Respira</div><div class="vital-value">${yn(a.respiration)}</div></div>
-          <div class="vital-box"><div class="vital-label">Circolo</div><div class="vital-value">${yn(a.circulation)}</div></div>
-          <div class="vital-box"><div class="vital-label">Cammina</div><div class="vital-value">${yn(a.walking)}</div></div>
-        </div>
-        <!-- Vitals numerici -->
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
-          <div class="vital-box"><div class="vital-label">FC</div><div class="vital-value">${a.heart_rate ?? '—'}</div></div>
-          <div class="vital-box"><div class="vital-label">SpO2</div><div class="vital-value">${a.spo2 != null ? a.spo2+'%' : '—'}</div></div>
-          <div class="vital-box"><div class="vital-label">PA</div><div class="vital-value">${a.blood_pressure ?? '—'}</div></div>
-          <div class="vital-box"><div class="vital-label">FR</div><div class="vital-value">${a.breathing_rate ?? '—'}</div></div>
-        </div>
+      </div>` : ''}
 
-        ${a.notes ? `<div style="font-size:12px;color:var(--text-secondary);line-height:1.5;margin-top:6px;">${a.notes}</div>` : ''}
-      </div>`
+      ${a.clinical_notes ? `
+      <div style="margin-top:8px;">
+        <div style="font-size:10px;letter-spacing:1.5px;color:var(--text-secondary);
+          text-transform:uppercase;font-weight:700;margin-bottom:4px;">Note cliniche</div>
+        <div style="font-size:13px;color:var(--text-primary);line-height:1.5;
+          padding:8px 10px;background:var(--bg-card);
+          border-radius:var(--radius);border-left:3px solid var(--border);">
+          ${a.clinical_notes}
+        </div>
+      </div>` : ''}
+      <!-- Condizioni base: si/no -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;margin-bottom:8px;">
+        <div class="vital-box"><div class="vital-label">Cosciente</div><div class="vital-value">${yn(a.conscious)}</div></div>
+        <div class="vital-box"><div class="vital-label">Respira</div><div class="vital-value">${yn(a.respiration)}</div></div>
+        <div class="vital-box"><div class="vital-label">Circolo</div><div class="vital-value">${yn(a.circulation)}</div></div>
+        <div class="vital-box"><div class="vital-label">Cammina</div><div class="vital-value">${yn(a.walking)}</div></div>
+      </div>
+      <!-- Vitals numerici -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
+        <div class="vital-box"><div class="vital-label">FC</div><div class="vital-value">${a.heart_rate ?? '—'}</div></div>
+        <div class="vital-box"><div class="vital-label">SpO2</div><div class="vital-value">${a.spo2 != null ? a.spo2+'%' : '—'}</div></div>
+        <div class="vital-box"><div class="vital-label">PA</div><div class="vital-value">${a.blood_pressure ?? '—'}</div></div>
+        <div class="vital-box"><div class="vital-label">FR</div><div class="vital-value">${a.breathing_rate ?? '—'}</div></div>
+      </div>
+
+    </div>`
     ).join('');
 
   const canClose = (inc.incident_responses || []).some(
@@ -598,7 +627,16 @@ async function buildDetailHTML(inc) {
         Età: ${inc.patient_age || 'ignoto'} · Sesso: ${inc.patient_gender || 'ignoto'}
       </div>
     </div>
-
+    <!-- Edit patient button -->
+    <button id="btn-edit-patient" style="
+      width:100%;padding:12px;border-radius:var(--radius);
+      border:1px solid var(--border-bright);color:var(--text-secondary);
+      font-size:12px;letter-spacing:1px;text-transform:uppercase;
+      background:var(--bg-card);margin-top:8px;cursor:pointer;
+      font-family:var(--font);">
+      ✎ Modifica dati paziente
+    </button>
+       
     <div>
       <div class="form-section-title">Storico valutazioni</div>
       ${assessmentHTML}
@@ -667,7 +705,7 @@ function openAssessmentForm(incidentId, previous = null) {
     .forEach(b => b.classList.remove('active'));
   document.querySelectorAll('#modal-assessment .triage-btn')
     .forEach(b => b.classList.remove('selected'));
-  ['a-heart-rate','a-spo2','a-gcs','a-clinical-notes'].forEach(id => {
+  ['a-heart-rate','a-spo2','a-gcs','a-description', 'a-clinical-notes'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -675,7 +713,7 @@ function openAssessmentForm(incidentId, previous = null) {
   const src = previous || {
     conscious: true, respiration: true, circulation: true, walking: true,
     triage: null, heart_rate: null, spo2: null, gcs_total: null,
-    breathing_rate: 18, notes: null
+    breathing_rate: 18, description: null
   };
 
   // Y/N fields
@@ -764,7 +802,8 @@ async function submitAssessment(incidentId) {
         gcs_total:      parseInt(document.getElementById('a-gcs')?.value)         || null,
         breathing_rate: brValue,
         triage:         STATE.assessmentData.triage,
-        notes:          document.getElementById('a-clinical-notes')?.value || null,
+        description:          document.getElementById('a-description')?.value.trim()          || null,
+        clinical_notes: document.getElementById('a-clinical-notes')?.value.trim() || null,
       });
 
     if (error) throw error;
@@ -782,6 +821,83 @@ async function submitAssessment(incidentId) {
     btn.textContent = 'Salva Valutazione';
   }
 }
+
+function openEditPatient(inc) {
+  // Pre-fill with current values
+  document.getElementById('ep-patient-name').value = inc.patient_name || '';
+  document.getElementById('ep-patient-id').value   = inc.patient_identifier || '';
+  document.getElementById('ep-patient-age').value  = inc.patient_age || '';
+
+  // Gender
+  document.querySelectorAll('#ep-gender-btns .seg-btn')
+    .forEach(b => {
+      b.classList.toggle('active', b.dataset.value === inc.patient_gender);
+    });
+
+  // Age stepper arrows
+  document.getElementById('ep-age-up').onclick = () => {
+    const input = document.getElementById('ep-patient-age');
+    const next  = Math.min((parseInt(input.value) || 40) + 10, 120);
+    input.value = next;
+  };
+  document.getElementById('ep-age-down').onclick = () => {
+    const input = document.getElementById('ep-patient-age');
+    const next  = Math.max((parseInt(input.value) || 60) - 10, 0);
+    input.value = next;
+  };
+
+  // Gender buttons
+  document.querySelectorAll('#ep-gender-btns .seg-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('#ep-gender-btns .seg-btn')
+        .forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    };
+  });
+
+  // Save button
+  document.getElementById('btn-save-patient').onclick =
+    () => savePatient(inc.id);
+
+  document.getElementById('modal-patient-close').onclick =
+    () => closeModal('modal-patient');
+
+  openModal('modal-patient');
+}
+
+async function savePatient(incidentId) {
+  const btn = document.getElementById('btn-save-patient');
+  btn.disabled  = true;
+  btn.textContent = 'Salvataggio...';
+
+  const ageVal = document.getElementById('ep-patient-age').value;
+  const gender = document.querySelector('#ep-gender-btns .seg-btn.active')
+    ?.dataset.value || null;
+
+  try {
+    const { error } = await db
+      .from('incidents')
+      .update({
+        patient_name:       document.getElementById('ep-patient-name').value.trim() || null,
+        patient_identifier: document.getElementById('ep-patient-id').value.trim()   || null,
+        patient_age:        ageVal !== '' ? parseInt(ageVal) : null,
+        patient_gender:     gender,
+      })
+      .eq('id', incidentId);
+
+    if (error) throw error;
+
+    closeModal('modal-patient');
+    showToast('Dati paziente aggiornati ✓', 'success');
+    openIncidentDetail(incidentId); // refresh detail
+  } catch (err) {
+    showToast('Errore: ' + err.message, 'error');
+  } finally {
+    btn.disabled  = false;
+    btn.textContent = 'Salva';
+  }
+}
+
 /* ================================================================
    WIRE UP ALL FORM EVENTS
 ================================================================ */

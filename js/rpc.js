@@ -64,7 +64,8 @@ async function fetchIncidents() {
 
     const { data: incidents } = await db
       .from('incidents')
-      .select('id, incident_type, status, current_triage, patient_name, patient_identifier, patient_age, patient_gender, created_at')
+      .select('id, incident_type, status, current_triage, patient_name, patient_identifier, patient_age, patient_gender, created_at, incident_responses(resource_id, outcome, resources(resource, resource_type))'
+      )
       .in('id', allIds)
       .order('created_at', { ascending: false });
 
@@ -89,7 +90,7 @@ async function fetchIncidentDetail(incidentId) {
       patient_assessments(
         id, assessed_at, conscious, respiration, circulation,
         walking, heart_rate, spo2, breathing_rate, gcs_total,
-        triage, notes, blood_pressure
+        triage, description, clinical_notes, blood_pressure
       )
     `)
     .eq('id', incidentId)
@@ -158,14 +159,61 @@ async function fetchEventResources() {
 async function fetchCrew() {
   const { data } = await db
     .from('personnel')
-    .select('id, name, surname, role')
+    .select('id, name, surname, role, number')
     .eq('resource', STATE.resource.id)
-    .eq('present', true)
+    .neq('present', false)
     .order('name');
 
   return data || [];
 }
 
+/* location of the crew */
+async function fetchResourcePosition() {
+  // First check resources_current_status for a live position
+  const { data: rcs } = await db
+    .from('resources_current_status')
+    .select('geom, location_updated_at')
+    .eq('resource_id', STATE.resource.id)
+    .single();
+
+  if (rcs?.geom) return { geom: rcs.geom, updated_at: rcs.location_updated_at, type: 'live' };
+
+  // Fallback to initial position from resources table
+  const { data: res } = await db
+    .from('resources')
+    .select('geom')
+    .eq('id', STATE.resource.id)
+    .single();
+
+  if (res?.geom) return { geom: res.geom, updated_at: null, type: 'initial' };
+
+  return null;
+}
+
+/*coordinator crew */
+async function fetchCoordinatorCrew() {
+  // Only fetch if this resource has a coordinator
+  if (!STATE.resource.coordinator_id) return null;
+
+  // Get coordinator resource info
+  const { data: coord } = await db
+    .from('resources')
+    .select('id, resource, resource_type')
+    .eq('id', STATE.resource.coordinator_id)
+    .single();
+
+  if (!coord) return null;
+
+  // Get coordinator's crew
+  const { data: crew } = await db
+    .from('personnel')
+    .select('id, name, surname, role, number')
+    .eq('resource', coord.id)
+    .neq('present', false)
+    .order('name');
+
+  return { coordinator: coord, crew: crew || [] };
+}
 /* ----------------------------------------------------------------
    RESOURCES (for coordinator sector view)
 ---------------------------------------------------------------- */

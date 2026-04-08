@@ -195,11 +195,13 @@
           </div>
         </div>
 
+        <div class="section-block" id="coordinator-crew-block" style="display:none;">
+          <!-- JS populates this -->
+        </div>
+        
         <div class="section-block">
-          <div class="section-label">Posizione iniziale</div>
-          <div style="height:160px; background:var(--bg-card); border-radius:var(--radius); overflow:hidden;" id="mini-map-container">
-            <div id="mini-map" style="width:100%;height:100%;"></div>
-          </div>
+          <div class="section-label">Posizione</div>
+          <div id="mini-map-container"></div>
         </div>
 
         <div class="section-block">
@@ -217,7 +219,7 @@
           </button>
         </div>
 
-      </div><!-- /panel-info -->
+      </div>
 
       <!-- ── PANEL: MAPPA (coordinator only) ── -->
       <div class="panel coordinator-only" id="panel-map">
@@ -313,7 +315,7 @@
       <!-- 2. DESCRIZIONE — always shown -->
       <div class="form-section">
         <div class="form-section-title">Descrizione <span class="required">*</span></div>
-        <textarea id="f-situation-notes" rows="3"
+        <textarea id="f-description" rows="3"
           placeholder="Descrizione dell'intervento..."></textarea>
       </div>
 
@@ -530,6 +532,12 @@
         </div>
       </div>
 
+      <!-- DESCRIZIONE -->
+      <div class="form-section">
+        <div class="form-section-title">Descrizione</div>
+        <textarea id="a-description" rows="3"
+          placeholder="Aggiornamento sulla situazione..."></textarea>
+      </div>
       <!-- VALUTAZIONE CLINICA — ASM, ASI, MM only -->
       <div class="form-section" id="a-section-clinical" style="display:none;">
         <div class="form-section-title">Valutazione clinica</div>
@@ -570,6 +578,59 @@
   </div>
 </div>
 
+<!-- ============================================================
+  MODAL — MODIFICA PAZIENTE
+============================================================ -->
+<div class="modal-backdrop" id="modal-patient">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <span class="modal-title">Dati Paziente</span>
+      <button class="modal-close" id="modal-patient-close">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="form-section">
+        <div class="form-row" style="margin-bottom:10px;">
+          <div class="input-group">
+            <label>Nome - Cognome</label>
+            <input type="text" id="ep-patient-name" placeholder="—" />
+          </div>
+          <div class="input-group">
+            <label>Pettorale</label>
+            <input type="text" id="ep-patient-id" placeholder="—" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="input-group" style = "flex:1;">
+            <label>Età apparente</label>
+            <div class="age-stepper">
+              <input type="number" id="ep-patient-age" class="age-input"
+                     value="" min="0" max="120" />
+              <div class="age-arrows">
+                <button class="age-btn" id="ep-age-up" type="button">▲</button>
+                <button class="age-btn" id="ep-age-down" type="button">▼</button>
+              </div>
+            </div>
+          </div>
+          <div class="input-group" style="flex:1;">
+            <label>Sesso</label>
+            <div class="seg-buttons" id="ep-gender-btns">
+              <button class="seg-btn" data-form="ep" data-value="M">M</button>
+              <button class="seg-btn" data-form="ep" data-value="F">F</button>
+              <button class="seg-btn" data-form="ep" data-value="altro">Altro</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn-submit-incident" id="btn-save-patient">
+        Salva
+      </button>
+
+    </div>
+  </div>
+</div>
 
 <!-- ============================================================
   SCRIPTS — load order matters:

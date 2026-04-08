@@ -50,11 +50,11 @@ BEGIN
   ELSE
     v_resource_id := NEW.resource;
   END IF;
-  IF v_resource_id IS NOT NULL THEN   -- Recount for the new/current resource (if not null)
+  IF v_resource_id IS NOT NULL THEN  
     UPDATE resources
     SET crew_count = (
       SELECT COUNT(*) FROM personnel
-      WHERE resource = v_resource_id
+      WHERE resource = v_resource_id AND present IS NOT FALSE
     )
     WHERE id = v_resource_id;
   END IF;
@@ -63,7 +63,7 @@ BEGIN
     UPDATE resources
     SET crew_count = (
       SELECT COUNT(*) FROM personnel
-      WHERE resource = OLD.resource
+      WHERE resource = OLD.resource AND present IS NOT FALSE
     )
     WHERE id = OLD.resource;
   END IF;

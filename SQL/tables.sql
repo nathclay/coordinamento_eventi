@@ -109,12 +109,12 @@ CREATE TABLE incidents (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   event_id UUID REFERENCES events(id) NOT NULL,
   patient_name TEXT,
-  patient_identifier TEXT, --If applicable, badge number, or any other identifier for the patient (e.g. "red bracelet #23")
+  patient_identifier TEXT, --For sporting events, pettorale
   patient_age INTEGER,
   patient_gender TEXT,
   geom GEOMETRY(POINT, 4326), -- location of the incident (not necessarily the same as the location of the assigned unit)
   incident_type incident_type_enum NOT NULL,
-  notes TEXT,-- initial situation notes
+  description TEXT,
   reported_by_resource_id UUID REFERENCES resources(id),
   current_triage triage_enum,-- latest triage from patient_assessments
   status incident_status_enum NOT NULL DEFAULT 'open',
@@ -173,12 +173,14 @@ CREATE TABLE patient_assessments (
   circulation BOOLEAN,
   walking BOOLEAN,
   minor_injuries BOOLEAN,
+  description TEXT,
+  clinical_notes TEXT,
   heart_rate INTEGER,
   blood_pressure INTEGER,   
   spo2 INTEGER,
   breathing_rate INTEGER,
   temperature NUMERIC(4,1), 
-  GCS_total INTEGER, -- Glasgow Coma Scale total score
+  gcs_total INTEGER, 
   HGT TEXT, -- capillary blood glucose level
   GIPSE TEXT,
   hospital_destination TEXT, -- if known at the time of assessment
