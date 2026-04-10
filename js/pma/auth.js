@@ -5,11 +5,11 @@
 ================================================================ */
 /*choose what view to upload*/
 function loadAppView() {
-  if (STATE.resource.resource_type === 'PMA') {
-    loadPMAView();
-  } else {
-    loadMainView();
+  if (STATE.resource.resource_type !== 'PMA') {
+    logout(); // or redirect
+    return;
   }
+  loadPMAView();
 }
 /* ----------------------------------------------------------------
    BOOT — called on window load
@@ -54,6 +54,11 @@ async function restoreResourceFromSession(email) {
 
   STATE.resource = resource;
 
+  if (resource.resource_type !== 'PMA') {
+  await db.auth.signOut();
+  showScreen('screen-login');
+  return;
+}
   const { data: event } = await db
     .from('events')
     .select('*')
@@ -108,15 +113,11 @@ async function handleLogin(e) {
     }
 
     // 3. Role guard — PCA users belong on pca.html and PMA to pma.html
-    const mobileRoles = ['ASM','ASI','SAP','BICI','MM','LDC','ALTRO'];
-    if (resource.resource_type === 'PMA' && !window.location.pathname.includes('pma')) {
-      window.location.href = 'pma.html';
-      return;
+    if (resource.resource_type !== 'PMA') {
+      await db.auth.signOut();
+      throw new Error('Accesso non autorizzato. Questa pagina è riservata al PMA.');
     }
-    if (!mobileRoles.includes(resource.resource_type)) {
-      window.location.href = 'pca.html';
-      return;
-    }
+
     STATE.resource = resource;
 
     // 4. Load active event

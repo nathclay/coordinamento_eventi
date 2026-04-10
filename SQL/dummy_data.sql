@@ -19,11 +19,33 @@ VALUES (
   'aaaaaaaa-0000-0000-0000-000000000001'
 );
 
+-- ASM-02 coordinated by CHARLIE-01
+INSERT INTO resources (id, event_id, resource, resource_type, geom, user_email, coordinator_id)
+VALUES (
+  'aaaaaaaa-0000-0000-0000-000000000003',
+  '11111111-0000-0000-0000-000000000001',
+  'ASM-02', 'ASM',
+  ST_SetSRID(ST_MakePoint(12.4796898,41.8762663), 4326),
+  'asm2@prova.it',
+  'aaaaaaaa-0000-0000-0000-000000000001'
+);
+
+-- ASM-03 coordinated by CHARLIE-01
+INSERT INTO resources (id, event_id, resource, resource_type, geom, user_email, coordinator_id)
+VALUES (
+  'aaaaaaaa-0000-0000-0000-000000000004',
+  '11111111-0000-0000-0000-000000000001',
+  'ASM-03', 'ASM',
+  ST_SetSRID(ST_MakePoint(12.4796898,41.8762663), 4326),
+  'asm3@prova.it',
+  'aaaaaaaa-0000-0000-0000-000000000001'
+);
+
 
 -- SAP-01 coordinated by CHARLIE-01
 INSERT INTO resources (id, event_id, resource, resource_type, geom, user_email, coordinator_id)
 VALUES (
-  'aaaaaaaa-0000-0000-0000-000000000004',
+  'aaaaaaaa-0000-0000-0000-000000000005',
   '11111111-0000-0000-0000-000000000001',
   'SAP-01', 'SAP',
   ST_SetSRID(ST_MakePoint(12.4796898,41.8762663), 4326),
@@ -31,15 +53,43 @@ VALUES (
   'aaaaaaaa-0000-0000-0000-000000000001'
 );
 
+
+INSERT INTO resources (id, event_id, resource, resource_type, geom, user_email, coordinator_id)
+VALUES (
+  'aaaaaaaa-0000-0000-0000-000000000006',
+  '11111111-0000-0000-0000-000000000001',
+  'SAP-02', 'SAP',
+  ST_SetSRID(ST_MakePoint(12.4796898,41.8762663), 4326),
+  'sap2@prova.it',
+  'aaaaaaaa-0000-0000-0000-000000000001'
+);
+
+INSERT INTO resources (id, event_id, resource, resource_type, geom, user_email, coordinator_id)
+VALUES (
+  'aaaaaaaa-0000-0000-0000-000000000007',
+  '11111111-0000-0000-0000-000000000001',
+  'SAP-03', 'SAP',
+  ST_SetSRID(ST_MakePoint(12.4796898,41.8762663), 4326),
+  'sap3@prova.it',
+  'aaaaaaaa-0000-0000-0000-000000000001'
+);
+
 --PMA
 INSERT INTO resources (id, event_id, resource, resource_type, user_email)
 VALUES (
-  'aaaaaaaa-0000-0000-0000-000000000005',
+  'aaaaaaaa-0000-0000-0000-000000000008',
   '11111111-0000-0000-0000-000000000001',
   'PMA-01', 'PMA',
   'pma1@prova.it'
 );
 
+INSERT INTO resources (id, event_id, resource, resource_type, user_email)
+VALUES (
+  'aaaaaaaa-0000-0000-0000-000000000009',
+  '11111111-0000-0000-0000-000000000001',
+  'PMA-02', 'PMA',
+  'pma2@prova.it'
+);
 
 -- ASM-01 crew
 INSERT INTO personnel (event_id, name, surname, CF, number, role, resource)

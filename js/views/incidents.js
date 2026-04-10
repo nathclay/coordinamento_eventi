@@ -578,6 +578,15 @@ async function openIncidentDetail(incidentId) {
 
   body.innerHTML = await buildDetailHTML(inc);
 
+  const myResponse = (inc.incident_responses || [])
+  .find(r => r.resource_id === STATE.resource.id &&
+    ['treating','en_route_to_pma','en_route_to_hospital'].includes(r.outcome));
+
+  const isEnRoutePma      = myResponse?.outcome === 'en_route_to_pma';
+  const isEnRouteHospital = myResponse?.outcome === 'en_route_to_hospital';
+  const isEnRoute         = isEnRoutePma || isEnRouteHospital;
+  const isClinical        = CLINICAL_TYPES.includes(STATE.resource.resource_type);
+
   document.getElementById('btn-add-assessment')
     ?.addEventListener('click', () => {
       const latest = (inc.patient_assessments || [])
@@ -681,6 +690,50 @@ async function openIncidentDetail(incidentId) {
       openIncidentDetail(incidentId);
     });
 
+    // confirm arrival to pma/hospital
+  document.getElementById('btn-arrived')
+  ?.addEventListener('click', async () => {
+    if (isEnRoutePma) {
+      const { error } = await db.rpc('handoff_incident', {
+        p_from_response_id: myResponse.id,
+        p_to_resource_id:   myResponse.dest_pma_id,
+        p_to_personnel_id:  null,
+        p_outcome:          'taken_to_pma',
+        p_notes:            null,
+        p_hospital_info:    null,
+      });
+      if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+      showToast('Paziente consegnato al PMA ✓', 'success');
+
+    } else if (isEnRouteHospital) {
+      const detail = document.getElementById('arrived-hospital-detail');
+      if (detail.style.display === 'none') {
+        detail.style.display = 'flex';
+        return;
+      }
+      const hosp  = document.getElementById('arrived-hospital-name')?.value.trim();
+      const gipse = document.getElementById('arrived-gipse')?.value.trim();
+      if (!hosp)  { showToast("Inserisci il nome dell'ospedale", 'error'); return; }
+      if (!gipse) { showToast('Inserisci il codice GIPSE', 'error'); return; }
+
+      const { error } = await db
+        .from('incident_responses')
+        .update({
+          outcome:       'taken_to_hospital',
+          dest_hospital: hosp,
+          gipse:         gipse || null,
+          released_at:   new Date().toISOString(),
+        })
+        .eq('id', myResponse.id);
+      if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+      showToast("Paziente consegnato all'ospedale ✓", 'success');
+    }
+
+    closeModal('modal-detail');
+    await loadIncidents();
+    await refreshHeaderStatus();
+  });
+
   const outcomeContainer = document.getElementById('detail-outcome-container');
   if (outcomeContainer) {
     STATE.formData.outcomeType = null;
@@ -708,6 +761,8 @@ async function buildDetailHTML(inc) {
     `<option value="${r.id}">${r.resource}</option>`).join('');
   const teamOptionsHTML = teamResources.map(r =>
     `<option value="${r.id}">${r.resource} (${r.resource_type})</option>`).join('');
+
+  const isClinical = CLINICAL_TYPES.includes(STATE.resource.resource_type);
 
     
   const buildAssessmentCard = (a) => `
@@ -861,6 +916,32 @@ async function buildDetailHTML(inc) {
         </div>` : ''}
       </div>
     </div>
+    ${isEnRouteHospital ? `
+    <div id="arrived-hospital-detail" style="display:none;flex-direction:column;gap:8px;
+      padding:12px;background:var(--bg-card);border-radius:var(--radius);
+      border:1px solid var(--border-bright);margin-bottom:8px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;
+        text-transform:uppercase;color:var(--text-secondary);">Dati ospedale</div>
+      <input type="text" id="arrived-hospital-name"
+        value="${myResponse.dest_hospital || ''}"
+        placeholder="Nome ospedale..."
+        style="width:100%;padding:10px;border-radius:var(--radius);
+        border:1.5px solid var(--border-bright);background:var(--bg-input);
+        font-family:var(--font);font-size:14px;color:var(--text-primary);" />
+      <input type="text" id="arrived-gipse" placeholder="Codice GIPSE..."
+        style="width:100%;padding:10px;border-radius:var(--radius);
+        border:1.5px solid var(--border-bright);background:var(--bg-input);
+        font-family:var(--font);font-size:14px;color:var(--text-primary);" />
+    </div>` : ''}
+    <button id="btn-arrived" style="
+      flex:1;padding:12px;border-radius:var(--radius);
+      border:1.5px solid ${isEnRoutePma ? 'var(--blue)' : 'var(--green)'};
+      color:${isEnRoutePma ? '#1060cc' : '#18a050'};font-size:12px;
+      font-weight:bold;letter-spacing:1px;text-transform:uppercase;
+      background:${isEnRoutePma ? 'var(--blue-dim)' : 'var(--green-dim)'};
+      cursor:pointer;font-family:var(--font);">
+      ✓ Arrivato
+    </button>
     <button id="btn-cancel-enroute" style="
       width:100%;padding:12px;border-radius:var(--radius);
       border:1px solid var(--border-bright);color:var(--text-secondary);font-size:12px;
@@ -898,7 +979,7 @@ async function buildDetailHTML(inc) {
             Conferma
           </button>
         </div>
-
+        ${isClinical ? `
         <button id="btn-en-route-hospital" style="
           width:100%;padding:12px 16px;border-radius:var(--radius);
           border:1.5px solid var(--orange);color:#8a4a00;font-size:13px;
@@ -920,7 +1001,7 @@ async function buildDetailHTML(inc) {
             font-family:var(--font);cursor:pointer;border:none;">
             Conferma
           </button>
-        </div>
+        </div>` : ''}
 
         <button id="btn-call-team" style="
           width:100%;padding:12px 16px;border-radius:var(--radius);

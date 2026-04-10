@@ -149,6 +149,7 @@ CREATE TABLE incident_responses (
   handoff_to_response_id UUID REFERENCES incident_responses(id),   -- Handoff chain: points to the next response row when this unit passes to another
   dest_hospital TEXT, -- To only use when a unit is in route for a hospital, when the patient is left we use hospital_info 
   hospital_info JSONB, -- Filled only when outcome = taken_to_hospital
+  gipse TEXT,
   notes TEXT,
   --assigned_by UUID REFERENCES personnel(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -184,7 +185,7 @@ CREATE TABLE patient_assessments (
   temperature NUMERIC(4,1), 
   gcs_total INTEGER, 
   HGT TEXT, -- capillary blood glucose level
-  GIPSE TEXT,
+  gipse TEXT,
   hospital_destination TEXT, -- if known at the time of assessment
   triage triage_enum,
   notes TEXT,

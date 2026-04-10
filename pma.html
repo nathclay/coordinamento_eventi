@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Control Room - PMA</title>
+  <link rel="stylesheet" href="css/shared.css" />
+  <link rel="stylesheet" href="css/pma.css" />
+</head>
+<body>
+
+<div id="app">
+
+    <!-- SCREEN 1 — LOGIN (reuse same structure) -->
+    <div id="screen-login" class="screen">
+        <div class="login-logo">🏥</div>
+        <div class="login-subtitle">PMA — Posto Medico Avanzato</div>
+        <form class="login-form" id="login-form" onsubmit="return false;">
+        <div class="input-group">
+            <label for="login-email">Email risorsa</label>
+            <input type="email" id="login-email" placeholder="pma@cri.it"
+                autocomplete="email" autocorrect="off" autocapitalize="none" />
+        </div>
+        <div class="input-group">
+            <label for="login-password">Password</label>
+            <input type="password" id="login-password" placeholder="••••••••"
+                autocomplete="current-password" />
+        </div>
+        <div class="login-error" id="login-error"></div>
+        <button class="btn-login" id="btn-login" type="submit">Accedi</button>
+        </form>
+    </div>
+
+    <!-- SCREEN 2 — CHI SEI? (Personnel selection) -->
+    <div id="screen-personnel" class="screen hidden">
+        <div class="personnel-header">
+            <div class="personnel-resource-badge">
+                <span class="personnel-resource-dot"></span>
+                <span id="personnel-resource-name"></span>
+            </div>
+            <div class="personnel-title">Chi sei?</div>
+            <div class="personnel-subtitle">Seleziona il tuo nome per identificarti</div>
+        </div>
+        <div class="personnel-list" id="personnel-list"></div>
+        <div class="personnel-skip" id="personnel-skip">
+            Continua senza identificarti →
+        </div>
+    </div>
+
+  <!-- SCREEN 3 — MAIN PMA VIEW -->
+  <div id="screen-main" class="screen hidden">
+
+    <!-- HEADER -->
+    <header id="pma-header">
+      <div class="pma-header-left">
+        <div class="header-logo">🏥</div>
+        <div>
+          <div class="header-resource-name" id="header-resource-name"></div>
+          <div class="header-user-name" id="header-user-name">—</div>
+        </div>
+      </div>
+      <div class="pma-stats" id="pma-stats">
+        <div class="pma-stat">
+          <div class="pma-stat-value" id="stat-incoming">0</div>
+          <div class="pma-stat-label">In arrivo</div>
+        </div>
+        <div class="pma-stat">
+          <div class="pma-stat-value" id="stat-active">0</div>
+          <div class="pma-stat-label">In trattamento</div>
+        </div>
+        <div class="pma-stat">
+          <div class="pma-stat-value" id="stat-closed">0</div>
+          <div class="pma-stat-label">Chiusi</div>
+        </div>
+      </div>
+      <button id="btn-new-patient" class="btn-new-patient">
+        + Nuovo paziente
+      </button>
+      <button id="btn-logout" class="btn-logout">Esci</button>
+    </header>
+
+    <!-- MAIN CONTENT -->
+    <main id="pma-main">
+
+      <!-- INCOMING SECTION -->
+      <section class="pma-section" id="section-incoming">
+        <div class="pma-section-header">
+          <span class="pma-section-icon">📨</span>
+          <span class="pma-section-title">In arrivo</span>
+          <span class="pma-section-count" id="count-incoming">0</span>
+        </div>
+        <div class="pma-table-wrapper">
+          <table class="pma-table" id="table-incoming">
+            <thead>
+              <tr>
+                <th>Ora</th>
+                <th>Paziente</th>
+                <th>Squadra</th>
+                <th>Triage</th>
+                <th>Coscienza</th>
+                <th>Respira</th>
+                <th>Circolo</th>
+                <th>Cammina</th>
+                <th>Prob. Min</th>
+                <th>FC</th>
+                <th>FR</th>
+                <th>SpO2</th>
+                <th>PA</th>
+                <th>Temp</th>
+                <th>GCS</th>
+                <th>HGT</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="tbody-incoming">
+              <tr class="empty-row">
+                <td colspan="17">Nessun paziente in arrivo</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ACTIVE SECTION -->
+      <section class="pma-section" id="section-active">
+        <div class="pma-section-header">
+          <span class="pma-section-icon">🟢</span>
+          <span class="pma-section-title">In trattamento</span>
+          <span class="pma-section-count" id="count-active">0</span>
+        </div>
+        <div class="pma-table-wrapper">
+          <table class="pma-table" id="table-active">
+            <thead>
+              <tr>
+                <th>Ora</th>
+                <th>Paziente</th>
+                <th>Triage</th>
+                <th>Coscienza</th>
+                <th>Respira</th>
+                <th>Circolo</th>
+                <th>Cammina</th>
+                <th>Prob. Min</th>
+                <th>FC</th>
+                <th>FR</th>
+                <th>SpO2</th>
+                <th>PA</th>
+                <th>Temp</th>
+                <th>GCS</th>
+                <th>HGT</th>
+                <th>✎</th>
+                <th>⬜</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-active">
+              <tr class="empty-row">
+                <td colspan="17">Nessun paziente in trattamento</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- CLOSED SECTION -->
+      <section class="pma-section" id="section-closed">
+        <div class="pma-section-header">
+          <span class="pma-section-icon">✓</span>
+          <span class="pma-section-title">Chiusi</span>
+          <span class="pma-section-count" id="count-closed">0</span>
+        </div>
+        <div class="pma-table-wrapper">
+          <table class="pma-table" id="table-closed">
+            <thead>
+              <tr>
+                <th>Ora</th>
+                <th>Paziente</th>
+                <th>Triage</th>
+                <th>Coscienza</th>
+                <th>Respira</th>
+                <th>Circolo</th>
+                <th>Cammina</th>
+                <th>Prob. Min</th>
+                <th>FC</th>
+                <th>FR</th>
+                <th>SpO2</th>
+                <th>PA</th>
+                <th>Temp</th>
+                <th>GCS</th>
+                <th>HGT</th>
+                <th>Esito</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-closed">
+              <tr class="empty-row">
+                <td colspan="16">Nessun paziente chiuso</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+</div>
+
+<!-- TOAST -->
+<div id="toast-container"></div>
+
+<!-- MODAL — ASSESSMENT -->
+<div class="modal-backdrop" id="modal-assessment">
+  <div class="modal-sheet pma-modal">
+    <div class="modal-header">
+      <span class="modal-title" id="assessment-modal-title">Valutazione</span>
+      <button class="modal-close" id="modal-assessment-close">✕</button>
+    </div>
+    <div class="modal-body" id="assessment-modal-body">
+    </div>
+  </div>
+</div>
+
+<!-- MODAL — CLOSE PATIENT -->
+<div class="modal-backdrop" id="modal-close-patient">
+  <div class="modal-sheet pma-modal">
+    <div class="modal-header">
+      <span class="modal-title">Chiudi paziente</span>
+      <button class="modal-close" id="modal-close-patient-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="input-group" style="margin-bottom:16px;">
+        <label>Esito</label>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+          <div class="status-option" id="close-opt-dimesso">
+            <span class="status-option-icon">✔</span>
+            <div>
+              <div style="font-weight:bold;">Dimesso</div>
+              <div style="font-size:11px;color:var(--text-secondary);">Paziente trattato e dimesso</div>
+            </div>
+          </div>
+          <div class="status-option" id="close-opt-ospedale">
+            <span class="status-option-icon">🚑</span>
+            <div>
+              <div style="font-weight:bold;">Trasportato in ospedale</div>
+              <div style="font-size:11px;color:var(--text-secondary);">Consegna a unità per trasporto</div>
+            </div>
+          </div>
+        </div>
+      </div>
+        <div id="close-hospital-detail" style="display:none;flex-direction:column;gap:8px;margin-bottom:16px;">
+        <div class="input-group">
+            <label>Unità che trasporta <span class="required">*</span></label>
+            <select id="close-transport-unit">
+            <option value="">— Seleziona —</option>
+            </select>
+        </div>
+      <button class="btn-submit-incident" id="btn-confirm-close-patient">
+        Conferma
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL — NEW PATIENT (walk-in) -->
+<div class="modal-backdrop" id="modal-new-patient">
+  <div class="modal-sheet pma-modal">
+    <div class="modal-header">
+      <span class="modal-title">Nuovo Paziente</span>
+      <button class="modal-close" id="modal-new-patient-close">✕</button>
+    </div>
+    <div class="modal-body" id="new-patient-body">
+      <!-- Same form fields as mobile incident form — injected by JS -->
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/pma/supabase.js"></script>
+<script src="js/pma/state.js"></script>
+<script src="js/pma/ui.js"></script>
+<script src="js/pma/rpc.js"></script>
+<script src="js/pma/realtime.js"></script>
+<script src="js/pma/views/pma.js"></script>
+<script src="js/pma/auth.js"></script>
+<script>
+window.addEventListener('load', function() {
+  initAuth();
+  boot();
+});
+</script>
+
+</body>
+</html>
