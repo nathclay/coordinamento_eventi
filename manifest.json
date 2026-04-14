@@ -2,7 +2,7 @@
   "name": "CGE: Coordinamento Grandi Eventi",
   "short_name": "CGE",
   "description": "App interattiva per coordinamento grandi eventi",
-  "start_url": "/mobile.html",
+  "start_url": "/Web_app_interventi/mobile.html",
   "scope": "/Web_app_interventi/",
   "display": "standalone",
   "background_color": "#0a0f15",
