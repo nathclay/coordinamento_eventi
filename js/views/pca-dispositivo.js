@@ -33,12 +33,12 @@ async function renderDispositivo() {
 
     // Fetch all resources for this event (excluding PCA)
     const { data: resources, error: resError } = await db
-    .from('resources')
-    .select('id, resource, resource_type, geom, notes, user_email, targa, start_time, end_time, coordinator:coordinator_id(resource)')
-    .eq('event_id', PCA.eventId)
-    .order('resource');
+        .from('resources')
+        .select('id, resource, resource_type, geom, notes, user_email, targa, start_time, end_time, coordinator:coordinator_id(resource)')
+        .eq('event_id', PCA.eventId)
+        .order('resource');
     // Fetch all personnel for this event
-        const { data: personnel, error: perError } = await db
+    const { data: personnel, error: perError } = await db
         .from('personnel')
         .select('id, name, surname, comitato, number, qualifications, role, resource_fk:resource')
         .eq('event_id', PCA.eventId)
@@ -64,54 +64,60 @@ async function renderDispositivo() {
     byResource[key].push(p);
     });
 
-  // Group resources by type
-  const byType = {};
-  allResources.forEach(r => {
-    if (!byType[r.resource_type]) byType[r.resource_type] = [];
-    byType[r.resource_type].push(r);
-  });
+    // Group resources by type
+    const byType = {};
+    allResources.forEach(r => {
+        if (!byType[r.resource_type]) byType[r.resource_type] = [];
+        byType[r.resource_type].push(r);
+    });
 
-  const sections = [];
+    const sections = [];
 
-  // ASM
-  if (byType['ASM']?.length > 0)
-    sections.push(buildAmbulanceSection('ASM', byType['ASM'], byResource));
+    // ASM + MM together
+    const asmResources = [
+    ...(byType['ASM'] || []),
+    ...(byType['MM']  || []),
+    ];
+    if (asmResources.length > 0)
+    sections.push(buildAmbulanceSection('ASM / MM', asmResources, byResource, 2, true));
 
-  // ASI
-  if (byType['ASI']?.length > 0)
-    sections.push(buildAmbulanceSection('ASI', byType['ASI'], byResource));
+    // ASI
+    if (byType['ASI']?.length > 0)
+    sections.push(buildAmbulanceSection('ASI', byType['ASI'], byResource, 2, true));
 
-  // SAP
-  if (byType['SAP']?.length > 0)
-    sections.push(buildSAPSection(byType['SAP'], byResource));
+    // PMA — minSocc 3, no targa
+    if (byType['PMA']?.length > 0)
+    sections.push(buildAmbulanceSection('PMA', byType['PMA'], byResource, 3, false));
 
-  // LDC
-  if (byType['LDC']?.length > 0)
-    sections.push(buildLDCSection(byType['LDC'], byResource));
+    // SAP
+    if (byType['SAP']?.length > 0)
+    sections.push(buildSAPSection_labeled('SAP', byType['SAP'], byResource));
 
-  // ALTRO — pool all personnel from ALTRO resources
-  if (byType['ALTRO']?.length > 0) {
-    const altroPeople = byType['ALTRO']
-      .flatMap(r => byResource[r.id] || []);
+    // BICI
+    if (byType['BICI']?.length > 0)
+    sections.push(buildSAPSection_labeled('BICI', byType['BICI'], byResource));
+
+    // LDC + PCA together
+    const ldcResources = [
+    ...(byType['LDC'] || []),
+    ...(byType['PCA'] || []),
+    ];
+    if (ldcResources.length > 0)
+    sections.push(buildLDCSection(ldcResources, byResource, 'LDC — Coordinatori / PCA'));
+
+    // ALTRO
+    if (byType['ALTRO']?.length > 0) {
+    const altroPeople = byType['ALTRO'].flatMap(r => byResource[r.id] || []);
     sections.push(buildPoolSection('Altro', altroPeople));
-  }
-
-  // BICI / MM — simple pool
-  ['BICI', 'MM'].forEach(type => {
-    if (byType[type]?.length > 0) {
-      const people = byType[type].flatMap(r => byResource[r.id] || []);
-      if (people.length > 0)
-        sections.push(buildPoolSection(type, people));
     }
-  });
 
-  // Non assegnato
-  const unassigned = byResource['__unassigned__'] || [];
-  sections.push(buildPoolSection('Non assegnati', unassigned));
+    // Non assegnato
+    const unassigned = byResource['__unassigned__'] || [];
+    sections.push(buildPoolSection('Non assegnati', unassigned));
 
-  body.innerHTML = sections.join('') ||
-    '<div class="empty-state">Nessun personale registrato</div>';
-  initDispResize();
+    body.innerHTML = sections.join('') ||
+        '<div class="empty-state">Nessun personale registrato</div>';
+    initDispResize();
 }
 
 function buildResourceInfoCells(r, includesTarga = false) {
@@ -284,9 +290,9 @@ function buildPersonCard(p, resourceId = null, suggestedRole = null) {
 
 
 /* ── ASM / ASI SECTION ─────────────────────────────────────── */
-function buildAmbulanceSection(type, resources, byResource) {
+function buildAmbulanceSection(type, resources, byResource, minSocc = 2, includeTarga = true) {
     // Calculate maxSocc and maxExtras across all resources
-    let maxSocc   = 2;
+    let maxSocc   = minSocc;
     let maxExtras = 0;
 
     resources.forEach(r => {
@@ -310,7 +316,7 @@ function buildAmbulanceSection(type, resources, byResource) {
 
     const headers = `
         <th class="disp-col-resource">Risorsa</th>
-        ${buildResourceInfoHeaders(true)}
+        ${buildResourceInfoHeaders(includeTarga)}
         <th>Autista</th>
         ${soccHeaders}
         <th>Infermiere</th>
@@ -337,8 +343,13 @@ function buildAmbulanceSection(type, resources, byResource) {
     `<td>${buildPersonCard(extras[i] || null, r.id, 'Altro')}</td>`).join('');
 
     return `<tr>
-    <td class="disp-resource-name">${r.resource}</td>
-    ${buildResourceInfoCells(r, type === 'ASM' || type === 'ASI')}
+    <td class="disp-resource-name">
+    ${r.resource}
+    <button class="disp-resource-edit-btn" 
+        onclick="openResourceModal('${r.id}')"
+        title="Modifica risorsa">✎</button>
+    </td>
+    ${buildResourceInfoCells(r, includeTarga)}
     <td>${buildPersonCard(autista,    r.id, 'Autista')}</td>
     ${soccCells}
     <td>${buildPersonCard(infermiere, r.id, 'Infermiere')}</td>
@@ -351,12 +362,16 @@ function buildAmbulanceSection(type, resources, byResource) {
 }
 /* ── SAP SECTION ───────────────────────────────────────────── */
 function buildSAPSection(resources, byResource) {
+  return buildSAPSection_labeled('SAP', resources, byResource);
+}
+
+function buildSAPSection_labeled(title, resources, byResource) {
   let maxCols   = 4;
   let maxExtras = 0;
 
   resources.forEach(r => {
-    const crew = byResource[r.id] || [];
-    const known = crew.filter(p =>
+    const crew   = byResource[r.id] || [];
+    const known  = crew.filter(p =>
       ['soccorritore','opem'].includes(p.role?.toLowerCase()));
     const extras = crew.filter(p =>
       !['soccorritore','opem'].includes(p.role?.toLowerCase()));
@@ -376,7 +391,8 @@ function buildSAPSection(resources, byResource) {
     ${extraHeaders}`;
 
   const rows = resources.map(r => {
-    const crew = byResource[r.id] || [];
+    const crew    = byResource[r.id] || [];
+    const soccCount = crew.filter(p => p.role?.toLowerCase() === 'soccorritore').length;
     const ordered = [
       ...crew.filter(p => p.role?.toLowerCase() === 'soccorritore'),
       ...crew.filter(p => p.role?.toLowerCase() === 'opem'),
@@ -384,26 +400,32 @@ function buildSAPSection(resources, byResource) {
     const extras = crew.filter(p =>
       !['soccorritore','opem'].includes(p.role?.toLowerCase()));
 
-    const mainCells = Array.from({ length: maxCols }, (_, i) =>
-    `<td>${buildPersonCard(ordered[i] || null, r.id, i < crew.filter(p => p.role?.toLowerCase() === 'soccorritore').length ? 'Soccorritore' : 'OPEM')}</td>`
-    ).join('');
+    const mainCells  = Array.from({ length: maxCols }, (_, i) =>
+      `<td>${buildPersonCard(
+        ordered[i] || null, r.id,
+        i < soccCount ? 'Soccorritore' : 'OPEM'
+      )}</td>`).join('');
     const extraCells = Array.from({ length: maxExtras }, (_, i) =>
-    `<td>${buildPersonCard(extras[i] || null, r.id, 'Altro')}</td>`).join('');
+      `<td>${buildPersonCard(extras[i] || null, r.id, 'Altro')}</td>`).join('');
 
     return `<tr>
-      <td class="disp-resource-name">${r.resource}</td>
+      <td class="disp-resource-name">
+        ${r.resource}
+        <button class="disp-resource-edit-btn" 
+            onclick="openResourceModal('${r.id}')"
+            title="Modifica risorsa">✎</button>
+        </td>
       ${buildResourceInfoCells(r, false)}
       ${mainCells}
       ${extraCells}
     </tr>`;
   }).join('');
 
-  return buildSection('SAP', headers, rows);
+  return buildSection(title, headers, rows);
 }
 
 /* ── LDC SECTION ───────────────────────────────────────────── */
-function buildLDCSection(resources, byResource) {
-  // Determine max columns, minimum 3
+function buildLDCSection(resources, byResource, title = 'LDC — Coordinatori') {
   let maxCols = 3;
   resources.forEach(r => {
     const crew = byResource[r.id] || [];
@@ -420,17 +442,146 @@ function buildLDCSection(resources, byResource) {
   const rows = resources.map(r => {
     const crew = byResource[r.id] || [];
     const cells = Array.from({ length: maxCols }, (_, i) =>
-    `<td>${buildPersonCard(crew[i] || null, r.id, 'Coordinatore')}</td>`
+      `<td>${buildPersonCard(crew[i] || null, r.id, 'Coordinatore')}</td>`
     ).join('');
-
     return `<tr>
-      <td class="disp-resource-name">${r.resource}</td>
+      <td class="disp-resource-name">
+        ${r.resource}
+        <button class="disp-resource-edit-btn" 
+            onclick="openResourceModal('${r.id}')"
+            title="Modifica risorsa">✎</button>
+        </td>
       ${buildResourceInfoCells(r, false)}
       ${cells}
     </tr>`;
   }).join('');
 
-  return buildSection('LDC — Coordinatori', headers, rows);
+  return buildSection(title, headers, rows);
+}
+
+async function openResourceModal(resourceId) {
+  const r = _allDispResources.find(r => r.id === resourceId);
+  if (!r) return;
+
+  const ldcs = _allDispResources.filter(r => r.resource_type === 'LDC');
+  const coordOpts = `<option value="">— Nessuno —</option>` +
+    ldcs.map(ldc => `
+      <option value="${ldc.id}" 
+        ${r.coordinator?.resource === ldc.resource ? 'selected' : ''}>
+        ${ldc.resource}
+      </option>`).join('');
+
+  document.getElementById('disp-modal-title').textContent = r.resource;
+  document.getElementById('disp-modal-body').innerHTML = `
+    <div class="form-row">
+      <div class="form-group">
+        <label>Lat</label>
+        <input type="number" id="dr-lat" step="any"
+          value="${r.geom?.coordinates?.[1] || ''}" placeholder="41.8902" />
+      </div>
+      <div class="form-group">
+        <label>Lng</label>
+        <input type="number" id="dr-lng" step="any"
+          value="${r.geom?.coordinates?.[0] || ''}" placeholder="12.4923" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Coordinatore</label>
+      <select id="dr-coordinator">${coordOpts}</select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Inizio operatività</label>
+        <input type="text" id="dr-start" 
+          value="${r.start_time ? formatDispDateTime(r.start_time) : ''}"
+          placeholder="DD/MM/YYYY HH:MM" />
+      </div>
+      <div class="form-group">
+        <label>Fine operatività</label>
+        <input type="text" id="dr-end"
+          value="${r.end_time ? formatDispDateTime(r.end_time) : ''}"
+          placeholder="DD/MM/YYYY HH:MM" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Email associata</label>
+      <input type="email" id="dr-email" value="${r.user_email || ''}" />
+    </div>
+    <div class="form-group">
+      <label>Note</label>
+      <textarea id="dr-notes" rows="2">${r.notes || ''}</textarea>
+    </div>
+    <div id="dr-error" class="error-msg"></div>`;
+
+  const saveBtn = document.getElementById('disp-modal-save');
+  saveBtn.onclick = () => saveResource(resourceId);
+  document.getElementById('disp-modal-delete').style.display = 'none';
+  document.getElementById('modal-disp-person').classList.remove('hidden');
+}
+
+async function saveResource(resourceId) {
+  const errEl  = document.getElementById('dr-error');
+  errEl.textContent = '';
+
+  const lat = parseFloat(document.getElementById('dr-lat').value);
+  const lng = parseFloat(document.getElementById('dr-lng').value);
+
+  const start = parseDispDateTime(document.getElementById('dr-start').value.trim());
+  const end   = parseDispDateTime(document.getElementById('dr-end').value.trim());
+
+  if (document.getElementById('dr-start').value.trim() && !start) {
+    errEl.textContent = 'Formato orario non valido. Usa DD/MM/YYYY HH:MM'; return;
+  }
+  if (document.getElementById('dr-end').value.trim() && !end) {
+    errEl.textContent = 'Formato orario non valido. Usa DD/MM/YYYY HH:MM'; return;
+  }
+
+  const saveBtn = document.getElementById('disp-modal-save');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Salvataggio...';
+
+  const payload = {
+    coordinator_id: document.getElementById('dr-coordinator').value || null,
+    user_email:     document.getElementById('dr-email').value.trim() || null,
+    notes:          document.getElementById('dr-notes').value.trim() || null,
+    start_time:     start,
+    end_time:       end,
+  };
+
+  if (!isNaN(lat) && !isNaN(lng)) {
+    payload.geom = `POINT(${lng} ${lat})`;
+  }
+
+  const { error } = await db.from('resources').update(payload).eq('id', resourceId);
+
+  saveBtn.disabled = false;
+  saveBtn.textContent = 'Salva';
+
+  if (error) { errEl.textContent = error.message; return; }
+
+  showPCAToast('Risorsa aggiornata ✓', 'success');
+  document.getElementById('modal-disp-person').classList.add('hidden');
+  await renderDispositivo();
+}
+
+function parseDispDateTime(str) {
+  if (!str) return null;
+  const match = str.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const [, dd, mm, yyyy, hh, min] = match;
+  const date = new Date(`${yyyy}-${mm}-${dd}T${hh}:${min}:00`);
+  return isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function formatDispDateTime(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  const dd   = String(d.getDate()).padStart(2,'0');
+  const mm   = String(d.getMonth()+1).padStart(2,'0');
+  const yyyy = d.getFullYear();
+  const hh   = String(d.getHours()).padStart(2,'0');
+  const min  = String(d.getMinutes()).padStart(2,'0');
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
 }
 
 /* ── POOL SECTION (ALTRO, BICI, MM, Non assegnati) ─────────── */

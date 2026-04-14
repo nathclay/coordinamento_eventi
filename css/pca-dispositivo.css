@@ -56,15 +56,6 @@
   overflow-x: auto;
 }
 
-.disp-table {
-  border-collapse: collapse;
-  font-size: 12px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
 .disp-table thead tr {
   background: var(--bg);
   border-bottom: 1px solid var(--border-bright);
@@ -125,12 +116,20 @@
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
 }
 
 .disp-person-meta {
   font-size: 10px;
   color: var(--text-secondary);
   line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
 }
 
 .disp-phone {
@@ -144,6 +143,10 @@
   color: var(--text-muted);
   font-style: italic;
   line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
 }
 
 .disp-maps-link {
@@ -178,8 +181,9 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-  width: max-content;
+  width: 100%;
   min-width: 100%;
+  table-layout: fixed;
 }
 
 .disp-table th,
@@ -188,6 +192,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   box-sizing: border-box;
+  max-width: 0;
 }
 
 .disp-clickable {
@@ -209,4 +214,18 @@
 .disp-person.disp-empty.disp-clickable:hover {
   border-color: var(--blue);
   color: var(--blue);
+}
+
+.disp-resource-edit-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 0 0 4px;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.disp-resource-name:hover .disp-resource-edit-btn {
+  opacity: 1;
 }

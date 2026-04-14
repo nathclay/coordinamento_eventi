@@ -11,7 +11,7 @@ function openPersonnelImportModal() {
     <div class="import-info">
       <div class="import-info-title">Formato CSV richiesto</div>
       <p class="import-info-desc">
-        Il file deve essere un CSV con separatore <strong>;</strong> (punto e virgola)
+        Il file deve essere un CSV con separatore <strong>,</strong>
         e la prima riga deve contenere le intestazioni esatte elencate sotto.
         Le colonne obbligatorie sono <strong>nome</strong> e <strong>cognome</strong>.
       </p>
@@ -156,7 +156,7 @@ async function handlePersonnelCSV(file) {
   const table = document.getElementById('personnel-preview-table');
   table.innerHTML = `
     <thead><tr>
-      <th>Nome</th><th>Cognome</th><th>CF</th><th>Ruolo</th>
+      <th>Nome</th><th>Cognome</th><th>cf</th><th>Ruolo</th>
       <th>Risorsa</th><th>Comitato</th><th>Email</th>
     </tr></thead>
     <tbody>
@@ -201,10 +201,10 @@ async function confirmPersonnelImport() {
   if (cfs.length > 0) {
     const { data: existing } = await db
       .from('personnel')
-      .select('id, CF')
+      .select('id, cf')
       .eq('event_id', PCA.eventId)
-      .in('CF', cfs);
-    (existing || []).forEach(p => { existingByCF[p.CF] = p.id; });
+      .in('cf', cfs);
+    (existing || []).forEach(p => { existingByCF[p.cf] = p.id; });
   }
 
   let done = 0;
@@ -215,14 +215,14 @@ async function confirmPersonnelImport() {
     const payload = {
       name:                 p.nome,
       surname:              p.cognome,
-      CF:                   p.cf,
+      cf:                   p.cf,
       comitato:             p.comitato,
-      number:               p.numero ? parseInt(p.numero) : null,
+      number: p.numero ? parseInt(p.numero.replace(/\D/g, '')) || null : null,      
       email:                p.email,
       qualifications:       p.qualifiche,
       role:                 p.ruolo,
       resource:             p.risorsa_id,
-      ICE:                  p.ice,
+      ice:                  p.ice,
       allergies:            p.allergie,
       activation_protocols: p.attivazione,
     };
@@ -251,6 +251,9 @@ async function confirmPersonnelImport() {
     await renderDispositivo();
   } else {
     textEl.textContent = `Completato: ${done - errors} importati, ${errors} errori. Controlla la console.`;
+    console.error('Import error row:', p, 'Error:', error.message, error.details, error.hint); 
+    errors++; 
+
   }
 }
 
@@ -261,7 +264,7 @@ function openResourcesImportModal() {
     <div class="import-info">
       <div class="import-info-title">Formato CSV richiesto</div>
       <p class="import-info-desc">
-        File CSV con separatore <strong>;</strong>. 
+        File CSV con separatore <strong>,</strong>. 
         Colonne obbligatorie: <strong>nome</strong> e <strong>tipologia</strong>.
         Se una risorsa con lo stesso nome esiste già, verrà aggiornata.
       </p>
@@ -271,13 +274,13 @@ function openResourcesImportModal() {
           <tr><td>nome</td><td>✓</td><td>Testo</td><td>Nome risorsa (es. ASM-01)</td></tr>
           <tr><td>tipologia</td><td>✓</td><td>Testo</td><td>ASM · ASI · SAP · BICI · MM · PMA · LDC · PCA · ALTRO</td></tr>
           <tr><td>targa</td><td></td><td>Testo</td><td>—</td></tr>
-          <tr><td>lat</td><td></td><td>Decimale</td><td>Latitudine (es. 41.8902)</td></tr>
-          <tr><td>lng</td><td></td><td>Decimale</td><td>Longitudine (es. 12.4923)</td></tr>
-          <tr><td>orario_inizio</td><td></td><td>DD/MM/YYYY HH:MM</td><td>Arrivo previsto</td></tr>
-          <tr><td>orario_fine</td><td></td><td>DD/MM/YYYY HH:MM</td><td>Partenza prevista</td></tr>
+          <tr><td>lat</td><td></td><td>Decimale</td><td>Latitudine iniziale risorsa (es. 41.8902)</td></tr>
+          <tr><td>lng</td><td></td><td>Decimale</td><td>Longitudine iniziale risorsa(es. 12.4923)</td></tr>
+          <tr><td>orario_inizio</td><td></td><td>DD/MM/YYYY HH:MM</td><td>Orario attivazione</td></tr>
+          <tr><td>orario_fine</td><td></td><td>DD/MM/YYYY HH:MM</td><td>Orario previsto di fine</td></tr>
           <tr><td>coordinatore</td><td></td><td>Testo</td><td>Nome risorsa LDC (es. CHARLIE-01)</td></tr>
           <tr><td>canale_radio</td><td></td><td>Testo</td><td>Nome canale radio — deve esistere</td></tr>
-          <tr><td>email_associata</td><td></td><td>Email</td><td>Email utente associato</td></tr>
+          <tr><td>email_associata</td><td></td><td>Email</td><td>Email associata</td></tr>
           <tr><td>note</td><td></td><td>Testo</td><td>—</td></tr>
         </tbody>
       </table>
@@ -552,8 +555,8 @@ function parseCSV(text) {
 
   if (lines.length < 2) return { error: 'Il file CSV deve avere almeno una riga di intestazione e una di dati.' };
 
-  const headers = lines[0].split(';').map(h => h.trim().toLowerCase());
-  const rows = lines.slice(1).map(line => line.split(';').map(v => v.trim()));
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+  const rows = lines.slice(1).map(line => line.split(',').map(v => v.trim()));
 
   return { headers, rows };
 }
