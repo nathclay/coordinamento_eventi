@@ -1,0 +1,161 @@
+/* ── PCA PMA PAGE ──────────────────────────────────────────── */
+.pma-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.pma-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.pma-page-updated {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* Tabs */
+.pma-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.pma-tab {
+  padding: 6px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: all .15s;
+}
+.pma-tab:hover { background: var(--bg-hover); color: var(--text-primary); }
+.pma-tab.active {
+  background: var(--blue-dim);
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+/* Body */
+.pma-page-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Section */
+.pma-page-section {}
+
+.pma-page-section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.pma-page-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-secondary);
+}
+
+/* Table */
+.pma-page-table-wrapper {
+  overflow-x: auto;
+}
+
+.pma-page-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.pma-page-table thead tr {
+  background: var(--bg);
+  border-bottom: 1px solid var(--border-bright);
+}
+
+.pma-page-table th {
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.pma-page-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.pma-page-table tbody tr:last-child td { border-bottom: none; }
+.pma-page-table tbody tr:hover { background: var(--bg-hover); }
+.pma-page-table .empty-row td {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 20px;
+}
+
+/* yn cells */
+.yn-cell {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.yn-cell.yes     { color: var(--green); background: var(--green-dim); }
+.yn-cell.no      { color: var(--red);   background: var(--red-dim); }
+.yn-cell.unknown { color: var(--text-muted); }
+
+/* Outcome badges */
+.outcome-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.outcome-badge.dimesso  { background: var(--green-dim); color: var(--green); }
+.outcome-badge.ospedale { background: var(--blue-dim);  color: var(--blue); }
+
+/* Storico button */
+.btn-table-action {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-bright);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font);
+  white-space: nowrap;
+  transition: all .12s;
+}
+.btn-table-action:hover { background: var(--bg-hover); color: var(--text-primary); }
+.btn-table-action.storico { color: var(--blue); border-color: var(--blue); }
+.btn-table-action.storico:hover { background: var(--blue-dim); }

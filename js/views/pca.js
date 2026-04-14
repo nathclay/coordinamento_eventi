@@ -1,7 +1,6 @@
 /* ================================================================
    pca.js  —  Posto di Comando Avanzato
-   Fully standalone. Owns its own auth, state, and boot flow.
-   Only depends on: supabase.js (for the db client)
+   Depends on: supabase.js, state.js, ui.js, auth.js
 ================================================================ */
 
 /* ── OWN STATE (no shared state.js needed) ─────────────────── */
@@ -20,146 +19,19 @@ const PCA = {
   activeFilters: new Set(),  // null | 'free' | 'recent'
 };
 
-/* ── BOOT — called on window load ──────────────────────────── */
-/*
-async function loadPCAView() {
-
-  // Check for existing session
-  const { data: { session } } = await db.auth.getSession();
-  if (!session) {
-    showScreen('screen-login');
-    return;
-  }
-
-  // Session exists — verify it belongs to a PCA resource
-  const { data: resource } = await db
-    .from('resources')
-    .select('*, event_radio_channels(channel_name, description)')
-    .eq('user_email', session.user.email)
-    .single();
-
-  if (!resource || resource.resource_type !== 'PCA') {
-    await db.auth.signOut();
-    showScreen('screen-login');
-    setLoginError('Accesso non autorizzato. Questa pagina è riservata al Posto di Comando.');
-    return;
-  }
-
-  await launchDashboard(resource);
-}
-*/
-
-/* ── LOGIN FORM ────────────────────────────────────────────── */
-/*
-async function handlePCALogin(e) {
-  e.preventDefault();
-  const email    = document.getElementById('login-email').value.trim();
-  const password = document.getElementById('login-password').value;
-  const btn      = document.getElementById('btn-login');
-  setLoginError('');
-  btn.disabled = true;
-  btn.textContent = 'Accesso...';
-
-  try {
-    const { error: authError } = await db.auth.signInWithPassword({ email, password });
-    if (authError) throw new Error('Email o password errati.');
-
-    const { data: resource } = await db
-      .from('resources')
-      .select('*, event_radio_channels(channel_name, description)')
-      .eq('user_email', email)
-      .single();
-
-    if (!resource) throw new Error('Nessuna risorsa associata a questa email.');
-    if (resource.resource_type !== 'PCA') {
-      await db.auth.signOut();
-      throw new Error('Accesso non autorizzato. Questa pagina è riservata al Posto di Comando.');
-    }
-
-    await launchDashboard(resource);
-
-  } catch (err) {
-    setLoginError(err.message);
-    btn.disabled = false;
-    btn.textContent = 'Accedi';
-  }
-}
-
-function setLoginError(msg) {
-  const el = document.getElementById('login-error');
-  if (el) el.textContent = msg;
-}
-*/
-/* ── PERSONNEL SCREEN ─────────────────────────────────────── */
-/*
-async function showPersonnelScreen(resource) {
-  document.getElementById('personnel-resource-name').textContent = resource.resource;
- 
-  const { data: personnel } = await db
-    .from('personnel')
-    .select('id, name, surname, role')
-    .eq('resource', resource.id)
-    .order('name');
- 
-  const list = document.getElementById('personnel-list');
-  list.innerHTML = '';
- 
-  if (!personnel || personnel.length === 0) {
-    list.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon">👤</div>
-        <div class="empty-text">Nessun membro registrato per questa risorsa</div>
-      </div>`;
-  } else {
-    personnel.forEach(p => {
-      const card = document.createElement('div');
-      card.className = 'personnel-card';
-      card.innerHTML = `
-        <div class="personnel-avatar">👤</div>
-        <div class="personnel-info">
-          <div class="personnel-name">${p.name} ${p.surname}</div>
-          <div class="personnel-role">${p.role || '—'}</div>
-        </div>
-        <span class="personnel-arrow">›</span>`;
-      card.addEventListener('click', () => {
-        PCA.operator = p;
-        launchDashboard(resource);
-      });
-      list.appendChild(card);
-    });
-  }
- 
-  document.getElementById('personnel-skip').addEventListener('click', () => {
-    PCA.operator = null;
-    launchDashboard(resource);
-  });
- 
-  showScreen('screen-personnel');
-}
-*/
-
 /* ── LAUNCH DASHBOARD ──────────────────────────────────────── */
-async function loadPCAView(resource) {
-  // Load active event
-  const { data: event } = await db
-    .from('events')
-    .select('*')
-    .eq('is_active', true)
-    .single();
- 
+async function loadPCAView() {
+  const resource = STATE.resource;
+  const event    = STATE.event;   // auth.js already fetched it
+
   PCA.resource = resource;
   PCA.event    = event;
-  PCA.eventId  = event?.id || resource.event_id;
- 
+  PCA.eventId  = event?.id || resource?.event_id;
+  PCA.operator = STATE.personnel; // ← picks up cached personnel too
+
   // Header
   document.getElementById('header-event-name').textContent =
     event?.name?.toUpperCase() || 'EVENTO';
- 
-  // Logout
-  document.getElementById('btn-logout').addEventListener('click', async () => {
-    await db.auth.signOut();
-    location.reload();
-  });
  
   // Modal close buttons
   document.querySelectorAll('.modal-close, [data-close]').forEach(btn => {
@@ -187,6 +59,7 @@ async function loadPCAView(resource) {
   startClocks(event?.start_time);
  
   // Show dashboard
+  initRouter();
   showScreen('screen-main');
  
   // Map
@@ -373,6 +246,10 @@ async function loadAllIncidents() {
   PCA.allIncidents.forEach(i => { 
     if (i.geom && i.status !== 'in_progress_in_pma') updateIncidentMarker(i); 
   });
+  // Refresh PMA page if active
+if (document.getElementById('pma-tabs')) refreshPCAView();
+if (document.getElementById('soccorsi-body')) renderSoccorsiTables();
+if (document.getElementById('moduli-body'))   renderModuliTables();
 }
  
 function renderIncidentPanels() {
@@ -452,6 +329,10 @@ async function loadAllResources() {
     const rcs = r.resources_current_status;
     if (rcs?.geom) updateResourceMarker(r, rcs.status || 'free', rcs.geom);
   });
+  if (document.getElementById('pma-tabs')) refreshPCAView();
+  if (document.getElementById('soccorsi-body')) renderSoccorsiTables();
+  if (document.getElementById('moduli-body'))   renderModuliTables();
+
 }
  
 function renderPMAList(pmas) {
@@ -539,7 +420,47 @@ function updateHeaderStats() {
   document.getElementById('val-pma').textContent = pmaActive;
 }
  
-/* ── INCIDENT DETAIL MODAL ─────────────────────────────────── */
+/* ── UNIFIED INCIDENT DETAIL MODAL ────────────────────────── */
+
+/* ── ASSESSMENT BUILDER ────────────────────────────────────── */
+function buildAssessment(inc, a) {
+  const triageLabels = { red: 'Rosso', yellow: 'Giallo', green: 'Verde', white: 'Bianco' };
+  const yn = v => v === true
+    ? '<span class="yn-yes">Sì</span>'
+    : v === false ? '<span class="yn-no">No</span>' : '—';
+
+  const responseResource = inc.incident_responses
+    ?.find(r => r.id === a.response_id)?.resources?.resource || '—';
+
+  return `
+    <div class="assessment-entry">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+        <span style="font-size:11px;color:var(--text-muted)">
+          ${new Date(a.assessed_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
+        </span>
+        <span style="font-size:11px;color:var(--text-secondary)">${responseResource}</span>
+      </div>
+      <div class="vitals-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:8px;">
+        <div class="vital-item"><strong>${yn(a.conscious)}</strong>Coscienza</div>
+        <div class="vital-item"><strong>${yn(a.respiration)}</strong>Respiro</div>
+        <div class="vital-item"><strong>${yn(a.circulation)}</strong>Circolo</div>
+        <div class="vital-item"><strong>${yn(a.walking)}</strong>Cammina</div>
+        <div class="vital-item"><strong>${yn(a.minor_injuries)}</strong>Prob. min.</div>
+        <div class="vital-item"><strong>${triageLabels[a.triage] || '—'}</strong>Triage</div>
+      </div>
+      <div class="vitals-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:8px;">
+        ${a.heart_rate     ? `<div class="vital-item"><strong>${a.heart_rate}</strong>FC</div>` : ''}
+        ${a.spo2           ? `<div class="vital-item"><strong>${a.spo2}%</strong>SpO2</div>` : ''}
+        ${a.breathing_rate ? `<div class="vital-item"><strong>${a.breathing_rate}</strong>FR</div>` : ''}
+        ${a.blood_pressure ? `<div class="vital-item"><strong>${a.blood_pressure}</strong>PA</div>` : ''}
+        ${a.temperature    ? `<div class="vital-item"><strong>${a.temperature}°</strong>Temp</div>` : ''}
+        ${a.gcs_total      ? `<div class="vital-item"><strong>${a.gcs_total}</strong>GCS</div>` : ''}
+      </div>
+      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;"
+        title="${a.description ?? ''}">${a.description ?? '—'}</td>
+    </div>`;
+}
+
 async function openIncidentDetailModal(incidentId) {
   const { data: inc, error } = await db
     .from('incidents')
@@ -547,12 +468,12 @@ async function openIncidentDetailModal(incidentId) {
       *,
       incident_responses(
         id, role, outcome, assigned_at, released_at, notes, hospital_info,
-        resources!incident_responses_resource_id_fkey(resource, resource_type)
+        resources!incident_responses_resource_id_fkey(id, resource, resource_type)
       ),
       patient_assessments(
-        id, assessed_at, response_id, triage, conscious, respiration, circulation,
-        walking, minor_injuries,
-        heart_rate, spo2, breathing_rate, blood_pressure, temperature, gcs_total,
+        id, assessed_at, response_id, triage,
+        conscious, respiration, circulation, walking, minor_injuries,
+        heart_rate, spo2, breathing_rate, blood_pressure, temperature, gcs_total, iv_access, bed_number_pma,
         description, clinical_notes,
         personnel:assessed_by(name, surname)
       )
@@ -562,71 +483,86 @@ async function openIncidentDetailModal(incidentId) {
 
   if (error || !inc) return;
 
+  const isActive = ['open', 'in_progress'].includes(inc.status);
   const triageLabels = { red: 'Rosso', yellow: 'Giallo', green: 'Verde', white: 'Bianco' };
-  const triageText = triageLabels[inc.current_triage] || 'Nessun codice';
+  const triage = inc.current_triage || 'none';
 
-  document.getElementById('modal-incident-title').textContent =
-    `Intervento — ${triageText}`;
+  // ── Title
+  document.getElementById('modal-incident-title').innerHTML =
+    `Soccorso &mdash; <span class="triage-pill ${triage}">${triageLabels[triage] || 'Nessun codice'}</span>`;
 
-  const responses = [...(inc.incident_responses || [])]
-  .sort((a, b) => new Date(b.assigned_at) - new Date(a.assigned_at))
-  .map(r => `
-    <div class="response-entry">
-      <div class="response-outcome-dot ${r.outcome}"></div>
-      <div style="flex:1">
-        <strong>${r.resources?.resource || '—'}</strong>
-        <span style="color:var(--text-muted);font-size:11px;margin-left:6px;">${formatOutcome(r.outcome)}</span>
-      </div>
-      <div style="font-size:10px;color:var(--text-muted)">${formatTime(r.assigned_at)}</div>
-    </div>`).join('') || '<div class="empty-state">Nessuna risposta</div>';
 
   const sorted = [...(inc.patient_assessments || [])]
     .sort((a, b) => new Date(b.assessed_at) - new Date(a.assessed_at));
 
-  const yn = v => v === true ? '<span style="color:var(--green)">Sì</span>' 
-                : v === false ? '<span style="color:var(--red)">No</span>' 
-                : '—';
+  const latestAssessment = sorted.length > 0
+    ? buildAssessment(inc, sorted[0])
+    : '<div class="empty-state">Nessun rilevamento</div>';
 
-  function buildAssessment(a) {
-    const responseResource = inc.incident_responses?.find(r => r.id === a.response_id)?.resources?.resource || '—';
-    return `
-      <div class="assessment-entry">
-        <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-          <span style="font-size:11px;color:var(--text-muted)">${new Date(a.assessed_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}</span>
-          <span style="font-size:11px;color:var(--text-secondary)">${responseResource}</span>
-        </div>
-        <div class="vitals-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:8px;">
-          <div class="vital-item"><strong>${yn(a.conscious)}</strong>Coscienza</div>
-          <div class="vital-item"><strong>${yn(a.respiration)}</strong>Respiro</div>
-          <div class="vital-item"><strong>${yn(a.circulation)}</strong>Circolo</div>
-          <div class="vital-item"><strong>${yn(a.walking)}</strong>Cammina</div>
-          <div class="vital-item"><strong>${yn(a.minor_injuries)}</strong>Prob. min.</div>
-          <div class="vital-item"><strong>${triageLabels[a.triage] || '—'}</strong>Triage</div>
-        </div>
-        <div class="vitals-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:8px;">
-          ${a.heart_rate     ? `<div class="vital-item"><strong>${a.heart_rate}</strong>FC</div>` : ''}
-          ${a.spo2           ? `<div class="vital-item"><strong>${a.spo2}%</strong>SpO2</div>` : ''}
-          ${a.breathing_rate ? `<div class="vital-item"><strong>${a.breathing_rate}</strong>FR</div>` : ''}
-          ${a.blood_pressure ? `<div class="vital-item"><strong>${a.blood_pressure}</strong>PA</div>` : ''}
-          ${a.temperature    ? `<div class="vital-item"><strong>${a.temperature}°</strong>Temp</div>` : ''}
-          ${a.gcs_total      ? `<div class="vital-item"><strong>${a.gcs_total}</strong>GCS</div>` : ''}
-        </div>
-        ${a.description    ? `<div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px;">Descrizione: ${a.description}</div>` : ''}
-        ${a.clinical_notes ? `<div style="font-size:11px;color:var(--text-muted);">Note cliniche: ${a.clinical_notes}</div>` : ''}
-      </div>`;
-  }
-
-  const latestAssessment = sorted.length > 0 ? buildAssessment(sorted[0]) : '<div class="empty-state">Nessun rilevamento</div>';
-  const previousAssessments = sorted.slice(1).map(buildAssessment).join('');
   const historyBlock = sorted.length > 1 ? `
     <div style="margin-top:8px;">
-      <button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none';this.textContent=this.textContent.includes('Mostra')?'Nascondi precedenti':'Mostra precedenti (${sorted.length - 1})';"
+      <button onclick="this.nextElementSibling.style.display=
+        this.nextElementSibling.style.display==='none'?'block':'none';
+        this.textContent=this.textContent.includes('Mostra')?
+        'Nascondi precedenti':'Mostra precedenti (${sorted.length - 1})'"
         style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;">
         Mostra precedenti (${sorted.length - 1})
       </button>
-      <div style="display:none;">${previousAssessments}</div>
+      <div style="display:none;">
+      ${sorted.slice(1).map(a => buildAssessment(inc, a)).join('')}      </div>
     </div>` : '';
 
+  // ── Response chain
+  const responses = [...(inc.incident_responses || [])]
+    .sort((a, b) => new Date(a.assigned_at) - new Date(b.assigned_at));
+
+  const chainHTML = responses.length === 0
+    ? '<div class="empty-state">Nessuna unità coinvolta</div>'
+    : responses.map(r => {
+        const isActiveResp = ['en_route_to_incident','treating',
+          'en_route_to_pma','en_route_to_hospital'].includes(r.outcome);
+        const canChange = isActiveResp && r.resources?.resource_type !== 'PMA';
+        return `
+          <div class="response-chain-row ${isActiveResp ? 'chain-active' : 'chain-done'}"
+               id="chain-row-${r.id}">
+            <div class="chain-dot ${r.outcome}"></div>
+            <div class="chain-body">
+              <span class="chain-resource">${r.resources?.resource || '—'}</span>
+              <span class="chain-outcome">${formatOutcome(r.outcome)}</span>
+            </div>
+            <div class="chain-times">
+              <span>${formatTime(r.assigned_at)}</span>
+              ${r.released_at
+                ? `<span class="chain-arrow">→</span><span>${formatTime(r.released_at)}</span>`
+                : ''}
+            </div>
+            ${canChange ? `
+              <div class="chain-actions">
+                <select class="outcome-select"
+                  onchange="showOutcomeConfirm('${r.id}', this.value, '${incidentId}', this)">
+                  <option value="">— Cambia esito —</option>
+                  <option value="treating">In trattamento</option>
+                  <option value="en_route_to_incident">In arrivo</option>
+                  <option value="treated_and_released">Trattato e dimesso</option>
+                  <option value="en_route_to_pma">Verso PMA</option>
+                  <option value="en_route_to_hospital">Verso ospedale</option>
+                  <option value="taken_to_hospital">Arrivato in ospedale</option>
+                  <option value="taken_to_pma">Arrivato al PMA</option>
+                  <option value="consegnato_118">Consegnato 118</option>
+                  <option value="refused_transport">Rifiuta trasporto</option>
+                </select>
+                <div class="outcome-confirm hidden" id="confirm-${r.id}">
+                  <span class="confirm-label">Confermare?</span>
+                  <button class="confirm-yes" 
+                    onclick="confirmOutcomeChange('${r.id}', '${incidentId}')">✓</button>
+                  <button class="confirm-no"
+                    onclick="cancelOutcomeChange('${r.id}')">✗</button>
+                </div>
+              </div>` : ''}
+          </div>`;
+      }).join('');
+
+  // ── Compose modal body
   document.getElementById('modal-incident-body').innerHTML = `
     <div class="detail-grid">
       <div class="detail-section">
@@ -635,17 +571,152 @@ async function openIncidentDetailModal(incidentId) {
         <div class="detail-row"><span>Identificativo</span><span>${inc.patient_identifier || '—'}</span></div>
         <div class="detail-row"><span>Età</span><span>${inc.patient_age || '—'}</span></div>
         <div class="detail-row"><span>Sesso</span><span>${inc.patient_gender || '—'}</span></div>
-        <div class="detail-label" style="margin-top:14px;">Risorse coinvolte</div>
-        ${responses}
-      </div>
-      <div class="detail-section">
-        <div class="detail-label">Ultimo rilevamento</div>
+        ${inc.description ? `
+          <div style="margin-top:10px;font-size:12px;color:var(--text-secondary);
+            padding:8px;background:var(--bg);border-radius:var(--radius);
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default;"
+            title="${inc.description}">
+            ${inc.description}
+          </div>` : ''}
+        <div class="detail-label" style="margin-top:16px;">Ultimo rilevamento</div>
         ${latestAssessment}
         ${historyBlock}
       </div>
+      <div class="detail-section">
+        <div class="detail-label">Catena interventi</div>
+        <div class="response-chain">${chainHTML}</div>
+      </div>
     </div>`;
 
+  // ── Footer
+  const footer = document.getElementById('modal-incident-footer');
+
+  if (isActive) {
+    footer.innerHTML = `
+      <button class="btn-secondary"
+        onclick="openAddResourceModal('${incidentId}')">+ Aggiungi risorsa</button>
+      <button class="btn-secondary" style="margin-left:auto;color:var(--red);border-color:var(--red);"
+        onclick="openCloseIncidentModal('${incidentId}')">Chiudi soccorso</button>`;
+  } else {
+    footer.innerHTML = '';
+  }
+
   openModal('modal-incident');
+}
+
+/* ── OUTCOME CHANGE WITH INLINE CONFIRM ────────────────────── */
+// Store pending outcome per response id
+const _pendingOutcome = {};
+
+function showOutcomeConfirm(responseId, outcome, incidentId, selectEl) {
+  if (!outcome) return;
+  _pendingOutcome[responseId] = { outcome, incidentId };
+  const confirmEl = document.getElementById(`confirm-${responseId}`);
+  if (confirmEl) confirmEl.classList.remove('hidden');
+  if (selectEl)  selectEl.disabled = true;
+}
+
+function cancelOutcomeChange(responseId) {
+  delete _pendingOutcome[responseId];
+  const confirmEl = document.getElementById(`confirm-${responseId}`);
+  if (confirmEl) confirmEl.classList.add('hidden');
+  // Re-enable and reset the select
+  const row = document.getElementById(`chain-row-${responseId}`);
+  const sel = row?.querySelector('.outcome-select');
+  if (sel) { sel.value = ''; sel.disabled = false; }
+}
+
+async function confirmOutcomeChange(responseId, incidentId) {
+  const pending = _pendingOutcome[responseId];
+  if (!pending) return;
+
+  const updates = { outcome: pending.outcome };
+  if (!['en_route_to_incident','treating',
+        'en_route_to_pma','en_route_to_hospital'].includes(pending.outcome)) {
+    updates.released_at = new Date().toISOString();
+  }
+
+  const { error } = await db
+    .from('incident_responses')
+    .update(updates)
+    .eq('id', responseId);
+
+  delete _pendingOutcome[responseId];
+
+  if (error) { showToast('Errore aggiornamento esito', 'error'); return; }
+  showToast('Esito aggiornato ✓', 'success');
+
+  // Refresh modal in place + background data
+  openIncidentDetailModal(incidentId);
+  loadAllIncidents();
+  loadAllResources();
+}
+
+/* ── ADD RESOURCE MODAL ────────────────────────────────────── */
+function openAddResourceModal(incidentId) {
+  const select = document.getElementById('ni-add-resource');
+  const nonPMA = PCA.allResources.filter(r => !['PMA','PCA'].includes(r.resource_type));
+  select.innerHTML = '<option value="">— Scegli —</option>' +
+    nonPMA.map(r => {
+      const status = r.resources_current_status?.status || 'free';
+      return `<option value="${r.id}">
+        ${r.resource} (${r.resource_type}) — ${statusItalian(status)}
+      </option>`;
+    }).join('');
+  document.getElementById('ni-add-error').textContent = '';
+  document.getElementById('ni-add-confirm').onclick = () => confirmAddResource(incidentId);
+  openModal('modal-add-resource');
+}
+
+async function confirmAddResource(incidentId) {
+  const resourceId = document.getElementById('ni-add-resource').value;
+  const outcome    = document.getElementById('ni-add-outcome').value;
+  const errEl      = document.getElementById('ni-add-error');
+  errEl.textContent = '';
+  if (!resourceId) { errEl.textContent = 'Seleziona una risorsa.'; return; }
+
+  const { error } = await db.from('incident_responses').insert({
+    event_id:    PCA.eventId,
+    incident_id: incidentId,
+    resource_id: resourceId,
+    outcome,
+    role:        'backup',
+    assigned_at: new Date().toISOString(),
+  });
+
+  if (error) { errEl.textContent = error.message; return; }
+  showToast('Risorsa aggiunta ✓', 'success');
+  closeModal('modal-add-resource');
+  openIncidentDetailModal(incidentId);
+  loadAllIncidents();
+  loadAllResources();
+}
+
+/* ── CLOSE INCIDENT MODAL ──────────────────────────────────── */
+function openCloseIncidentModal(incidentId) {
+  document.getElementById('ci-error').textContent = '';
+  document.getElementById('ci-confirm').onclick = () => confirmCloseIncident(incidentId);
+  openModal('modal-close-incident');
+}
+
+async function confirmCloseIncident(incidentId) {
+  const outcome = document.getElementById('ci-outcome').value;
+  const errEl   = document.getElementById('ci-error');
+  errEl.textContent = '';
+
+  const { error } = await db
+    .from('incident_responses')
+    .update({ outcome, released_at: new Date().toISOString() })
+    .eq('incident_id', incidentId)
+    .in('outcome', ['en_route_to_incident','treating',
+                    'en_route_to_pma','en_route_to_hospital']);
+
+  if (error) { errEl.textContent = error.message; return; }
+  showToast('Soccorso chiuso ✓', 'success');
+  closeModal('modal-close-incident');
+  closeModal('modal-incident');
+  loadAllIncidents();
+  loadAllResources();
 }
  
 /* ── RESOURCE DETAIL MODAL ─────────────────────────────────── */
@@ -711,8 +782,8 @@ async function setResourceStatus(resourceId, status) {
     .from('resources_current_status')
     .update({ status })
     .eq('resource_id', resourceId);
-  if (error) { showPCAToast('Errore aggiornamento stato', 'error'); return; }
-  showPCAToast(`Risorsa ${statusItalian(status)}`, 'success');
+  if (error) { showToast('Errore aggiornamento stato', 'error'); return; }
+  showToast(`Risorsa ${statusItalian(status)}`, 'success');
   closeModal('modal-resource');
   await loadAllResources();
 }
@@ -760,7 +831,7 @@ async function submitNewIncident() {
     const { error } = await db.rpc('create_incident_with_assessment', params);
     if (error) throw error;
     closeModal('modal-new-incident');
-    showPCAToast('Intervento creato ✓', 'success');
+    showToast('Intervento creato ✓', 'success');
     await loadAllIncidents();
   } catch (err) {
     errEl.textContent = err.message || 'Errore nella creazione.';
@@ -811,7 +882,7 @@ function focusMapSearch() {
     const [lng, lat] = r.resources_current_status.geom.coordinates;
     PCA.map.setView([lat, lng], 16);
   } else {
-    showPCAToast('Non trovato', 'error');
+    showToast('Non trovato', 'error');
   }
 }
  

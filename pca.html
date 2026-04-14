@@ -6,6 +6,10 @@
   <title>PCA — Posto di Comando Avanzato</title>
   <link rel="stylesheet" href="css/shared.css" />
   <link rel="stylesheet" href="css/pca.css" />
+  <link rel="stylesheet" href="css/pca-soccorsi.css" />
+  <link rel="stylesheet" href="css/pca-pma.css" />
+  <link rel="stylesheet" href="css/pca-dispositivo.css" />
+  <link rel="stylesheet" href="css/pca-import.css" />
 </head>
 <body>
 
@@ -58,10 +62,47 @@
      SCREEN: MAIN PCA DASHBOARD
 ============================================================ -->
 <div id="screen-main" class="screen">
+  <!-- Sidebar-->
+  <nav class="pca-sidebar" id="pca-sidebar">
+    <div class="sidebar-logo">🚑</div>
+    <div class="sidebar-nav">
+      <button class="sidebar-item active" data-page="home">
+        <span class="sidebar-icon">🗺️</span>
+        <span class="sidebar-label">Home</span>
+      </button>
+      <button class="sidebar-item" data-page="soccorsi">
+        <span class="sidebar-icon">🚨</span>
+        <span class="sidebar-label">Soccorsi</span>
+      </button>
+      <button class="sidebar-item" data-page="moduli">
+        <span class="sidebar-icon">🚑</span>
+        <span class="sidebar-label">Moduli</span>
+      </button>
+      <button class="sidebar-item" data-page="pma">
+        <span class="sidebar-icon">🏥</span>
+        <span class="sidebar-label">PMA</span>
+      </button>
+      <button class="sidebar-item" data-page="dispositivo">
+        <span class="sidebar-icon">👥</span>
+        <span class="sidebar-label">Dispositivo</span>
+      </button>
+    </div>
+    <div class="sidebar-bottom">
+      <button class="sidebar-item" data-page="impostazioni">
+        <span class="sidebar-icon">⚙️</span>
+        <span class="sidebar-label">Impostazioni</span>
+      </button>
+      <button class="sidebar-item" id="sidebar-logout">
+        <span class="sidebar-icon">⏻</span>
+        <span class="sidebar-label">Logout</span>
+      </button>
+    </div>
+  </nav>
+  <div class="pca-shell">
     <!-- HEADER -->
     <header class="pca-header">
       <div class="header-title" id="header-event-name">TITOLO EVENTO</div>
- 
+
       <div class="header-stats">
         <div class="hstat hstat-race">
           <span class="hstat-label">ORARIO GARA</span>
@@ -106,94 +147,90 @@
           <span class="hstat-value" id="val-pma">0</span>
         </div>
       </div>
- 
-      <div class="header-actions">
-        <button id="btn-logout" class="btn-icon" title="Logout">⏻</button>
-      </div>
     </header>
- 
     <!-- WORKSPACE -->
-    <div class="pca-workspace" id="workspace">
- 
-      <!-- LEFT: Incidents -->
-      <aside class="panel-side panel-left" id="panel-left">
-        <div class="panel-resize-handle panel-resize-right" id="resize-left"></div>
-        <div class="side-section" id="section-active-inc" style="flex:1;min-height:80px;">
-          <div class="side-section-header">
-            <span class="side-section-title">Soccorsi attivi</span>
-            <span class="side-badge badge-active" id="badge-active-count">0</span>
+    <div id="page-content">
+      <div class="pca-workspace" id="workspace">
+
+        <!-- LEFT: Incidents -->
+        <aside class="panel-side panel-left" id="panel-left">
+          <div class="panel-resize-handle panel-resize-right" id="resize-left"></div>
+          <div class="side-section" id="section-active-inc" style="flex:1;min-height:80px;">
+            <div class="side-section-header">
+              <span class="side-section-title">Soccorsi attivi</span>
+              <span class="side-badge badge-active" id="badge-active-count">0</span>
+            </div>
+            <div id="list-active-incidents" class="incident-list">
+              <div class="empty-state">Nessun soccorso attivo</div>
+            </div>
           </div>
-          <div id="list-active-incidents" class="incident-list">
-            <div class="empty-state">Nessun soccorso attivo</div>
+          <div class="panel-resize-handle panel-resize-horiz" id="resize-incidents"></div>
+          <div class="side-section" id="section-closed-inc" style="flex:1;min-height:80px;">
+            <div class="side-section-header">
+              <span class="side-section-title">Soccorsi chiusi</span>
+              <span class="side-badge badge-closed" id="badge-closed-count">0</span>
+            </div>
+            <div id="list-closed-incidents" class="incident-list">
+              <div class="empty-state">Nessun soccorso chiuso</div>
+            </div>
           </div>
-        </div>
-        <div class="panel-resize-handle panel-resize-horiz" id="resize-incidents"></div>
-        <div class="side-section" id="section-closed-inc" style="flex:1;min-height:80px;">
-          <div class="side-section-header">
-            <span class="side-section-title">Soccorsi chiusi</span>
-            <span class="side-badge badge-closed" id="badge-closed-count">0</span>
+        </aside>
+
+        <!-- CENTER: Map -->
+        <main class="panel-map" id="panel-map">
+          <div id="map"></div>
+          <div class="map-controls">
+            <div class="map-ctrl-label">LAYER MAPPA</div>
+            <button class="map-layer-btn active" data-layer="risorse">Risorse</button>
+            <button class="map-layer-btn active" data-layer="coordinatori">Coordinatori</button>
+            <button class="map-layer-btn active" data-layer="attivi">Int. attivi</button>
+            <button class="map-layer-btn active" data-layer="chiusi">Int. chiusi</button>
           </div>
-          <div id="list-closed-incidents" class="incident-list">
-            <div class="empty-state">Nessun soccorso chiuso</div>
+          <div class="map-legend">
+            <div class="legend-title">LEGENDA</div>
+            <div class="legend-item"><span class="legend-dot free"></span>Libera</div>
+            <div class="legend-item"><span class="legend-dot busy"></span>In intervento</div>
+            <div class="legend-item"><span class="legend-dot stopped"></span>Ferma</div>
+            <div class="legend-item"><span class="legend-dot incident-red"></span>Rosso</div>
+            <div class="legend-item"><span class="legend-dot incident-yellow"></span>Giallo</div>
+            <div class="legend-item"><span class="legend-dot incident-green"></span>Verde</div>
           </div>
-        </div>
-      </aside>
- 
-      <!-- CENTER: Map -->
-      <main class="panel-map" id="panel-map">
-        <div id="map"></div>
-        <div class="map-controls">
-          <div class="map-ctrl-label">LAYER MAPPA</div>
-          <button class="map-layer-btn active" data-layer="risorse">Risorse</button>
-          <button class="map-layer-btn active" data-layer="coordinatori">Coordinatori</button>
-          <button class="map-layer-btn active" data-layer="attivi">Int. attivi</button>
-          <button class="map-layer-btn active" data-layer="chiusi">Int. chiusi</button>
-        </div>
-        <div class="map-legend">
-          <div class="legend-title">LEGENDA</div>
-          <div class="legend-item"><span class="legend-dot free"></span>Libera</div>
-          <div class="legend-item"><span class="legend-dot busy"></span>In intervento</div>
-          <div class="legend-item"><span class="legend-dot stopped"></span>Ferma</div>
-          <div class="legend-item"><span class="legend-dot incident-red"></span>Rosso</div>
-          <div class="legend-item"><span class="legend-dot incident-yellow"></span>Giallo</div>
-          <div class="legend-item"><span class="legend-dot incident-green"></span>Verde</div>
-        </div>
-        <div class="map-bottom-bar">
-          <button class="map-btn" id="btn-recent-pos">📍 Pos. recenti</button>
-          <button class="map-btn" id="btn-free-units">🚑 Mezzi liberi</button>
-          <button class="map-btn" id="btn-search">🔍 Cerca</button>
-          <button class="map-btn map-btn-primary" id="btn-new-incident">🚨 Intervento</button>
-        </div>
-      </main>
- 
-      <!-- RIGHT: Resources -->
-      <aside class="panel-side panel-right" id="panel-right">
-        <div class="panel-resize-handle panel-resize-left" id="resize-right"></div>
-        <div class="side-section" id="section-pma" style="flex:1;min-height:80px;">
-          <div class="side-section-header">
-            <span class="side-section-title">Moduli PMA</span>
+          <div class="map-bottom-bar">
+            <button class="map-btn" id="btn-recent-pos">📍 Pos. recenti</button>
+            <button class="map-btn" id="btn-free-units">🚑 Mezzi liberi</button>
+            <button class="map-btn" id="btn-search">🔍 Cerca</button>
+            <button class="map-btn map-btn-primary" id="btn-new-incident">🚨 Intervento</button>
           </div>
-          <div id="list-pma-resources" class="resource-list">
-            <div class="empty-state">Nessun PMA configurato</div>
+        </main>
+
+        <!-- RIGHT: Resources -->
+        <aside class="panel-side panel-right" id="panel-right">
+          <div class="panel-resize-handle panel-resize-left" id="resize-right"></div>
+          <div class="side-section" id="section-pma" style="flex:1;min-height:80px;">
+            <div class="side-section-header">
+              <span class="side-section-title">Moduli PMA</span>
+            </div>
+            <div id="list-pma-resources" class="resource-list">
+              <div class="empty-state">Nessun PMA configurato</div>
+            </div>
           </div>
-        </div>
-        <div class="panel-resize-handle panel-resize-horiz" id="resize-resources"></div>
-        <div class="side-section" id="section-operative" style="flex:1;min-height:80px;">
-          <div class="side-section-header">
-            <span class="side-section-title">Moduli operativi</span>
-            <span class="side-badge" id="badge-resources-count">0</span>
+          <div class="panel-resize-handle panel-resize-horiz" id="resize-resources"></div>
+          <div class="side-section" id="section-operative" style="flex:1;min-height:80px;">
+            <div class="side-section-header">
+              <span class="side-section-title">Moduli operativi</span>
+              <span class="side-badge" id="badge-resources-count">0</span>
+            </div>
+            <div id="list-all-resources" class="resource-list">
+              <div class="empty-state">Nessuna risorsa</div>
+            </div>
           </div>
-          <div id="list-all-resources" class="resource-list">
-            <div class="empty-state">Nessuna risorsa</div>
-          </div>
-        </div>
-      </aside>
- 
+        </aside>
+
+      </div>
     </div>
   </div>
- 
-</div><!-- /app -->
- 
+</div>
+  
 <!-- TOAST -->
 <div id="toast-container"></div>
 
@@ -208,6 +245,7 @@
     </div>
     <div class="modal-body" id="modal-incident-body">
     </div>
+    <div class="modal-footer" id="modal-incident-footer"></div> 
   </div>
 </div>
 
@@ -300,6 +338,99 @@
   </div>
 </div>
 
+<!-- MODAL: Add resource to incident -->
+<div id="modal-add-resource" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2>Aggiungi risorsa</h2>
+      <button class="modal-close" data-close="modal-add-resource">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Risorsa</label>
+        <select id="ni-add-resource"></select>
+      </div>
+      <div class="form-group">
+        <label>Outcome iniziale</label>
+        <select id="ni-add-outcome">
+          <option value="en_route_to_incident">In arrivo</option>
+          <option value="treating">In trattamento</option>
+        </select>
+      </div>
+      <div id="ni-add-error" class="error-msg"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" data-close="modal-add-resource">Annulla</button>
+      <button class="btn-primary" id="ni-add-confirm"
+        style="width:auto;padding:8px 20px;">Aggiungi</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Close incident -->
+<div id="modal-close-incident" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2>Chiudi soccorso</h2>
+      <button class="modal-close" data-close="modal-close-incident">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px;">
+        Seleziona l'esito finale per tutte le unità attive.
+      </p>
+      <div class="form-group">
+        <label>Esito</label>
+        <select id="ci-outcome">
+          <option value="treated_and_released">Trattato e dimesso</option>
+          <option value="cancelled">Annullato / Falso allarme</option>
+        </select>
+      </div>
+      <div id="ci-error" class="error-msg"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" data-close="modal-close-incident">Annulla</button>
+      <button class="btn-primary" id="ci-confirm"
+        style="width:auto;padding:8px 20px;background:var(--red);">Chiudi</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Personnel edit/create -->
+<div id="modal-disp-person" class="modal-overlay hidden">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2 id="disp-modal-title">Personale</h2>
+      <button class="modal-close" data-close="modal-disp-person">✕</button>
+    </div>
+    <div class="modal-body" id="disp-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" id="disp-modal-delete"
+        style="color:var(--red);border-color:var(--red);">Elimina</button>
+      <button class="btn-secondary" data-close="modal-disp-person">Annulla</button>
+      <button class="btn-primary" id="disp-modal-save"
+        style="width:auto;padding:8px 20px;">Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: CSV Import (shared) -->
+<div id="modal-import" class="modal-overlay hidden">
+  <div class="modal-box modal-wide">
+    <div class="modal-header">
+      <h2 id="import-modal-title">Importa</h2>
+      <button class="modal-close" data-close="modal-import">✕</button>
+    </div>
+    <div class="modal-body" id="import-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" data-close="modal-import">Annulla</button>
+      <button class="btn-primary" id="import-modal-confirm"
+        style="width:auto;padding:8px 20px;display:none;">
+        Conferma importazione
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- ── SCRIPTS ──────────────────────────────────────────────── -->
 <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -309,6 +440,12 @@
 <script src="js/state.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/views/pca.js"></script>
+<script src="js/views/pca-moduli.js"></script>
+<script src="js/views/pca-soccorsi.js"></script>
+<script src="js/views/pca-pma.js"></script>
+<script src="js/views/pca-dispositivo.js"></script>
+<script src="js/views/pca-import.js"></script>
+<script src="js/router.js"></script>
 <script>const AUTH_MODE = 'pca';</script>
 <script src="js/auth.js"></script>
 

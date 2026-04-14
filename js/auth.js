@@ -27,10 +27,10 @@ function accessDeniedMessage(resource_type) {
   const pages = { PMA: 'pma.html', PCA: 'pca.html' };
   const correctPage = pages[resource_type] || 'mobile.html';
   if (AUTH_MODE === 'pma')
-    return `Questa pagina è riservata al PMA. Accedi da ${correctPage}.`;
+    return `Questa pagina è riservata al PMA.`;
   if (AUTH_MODE === 'pca')
-    return `Questa pagina è riservata al Posto di Comando. Accedi da ${correctPage}.`;
-  return `Questa pagina è riservata alle squadre operative. Accedi da ${correctPage}.`;
+    return `Questa pagina è riservata al Posto di Comando.`;
+  return `Questa pagina è riservata alle squadre operative.`;
 }
 
 /* ----------------------------------------------------------------

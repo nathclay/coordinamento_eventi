@@ -21,7 +21,7 @@ CREATE TABLE personnel (
   event_id uuid REFERENCES events(id) NOT NULL,
   name TEXT NOT NULL,
   surname TEXT NOT NULL,
-  CF TEXT NOT NULL, -- codice fiscale,
+  cf TEXT, -- codice fiscale,
   comitato TEXT, -- comitato di appartenenza
   number bigint, -- phone number
   email TEXT,
@@ -58,7 +58,10 @@ CREATE TABLE resources (
   event_id uuid REFERENCES events(id) NOT NULL,
   resource TEXT NOT NULL,
   resource_type type_enum NOT NULL,
+  targa TEXT,
   geom GEOMETRY(POINT, 4326), --initial position of resource, as per the health plan
+  start_time TIMESTAMPTZ, --from timetable
+  end_time TIMESTAMPTZ,
   coordinator_id uuid REFERENCES resources(id) ON DELETE SET NULL, --coordinator assigned to that resource. Can vary during the event. 
   radio_channel_id UUID REFERENCES event_radio_channels(id) ON DELETE SET NULL, 
   crew_count INTEGER DEFAULT 0, -- automatically updated based on the number of personnel assigned to this resource in the personnel table
