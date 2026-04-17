@@ -1,6 +1,6 @@
 /* ================================================================
-   js/views/main.js
-   Main view: loads all data, populates panels, wires up tabs.
+   js/views/mobile.js
+   Main view of mobile: loads all data, populates panels, wires up tabs.
    Called after auth + personnel selection are complete.
    Depends on: rpc.js, ui.js, state.js, realtime.js, location.js,
                map.js, incidents.js
@@ -96,6 +96,24 @@ async function loadMobileView() {
 
   // Show the main view
   showScreen('screen-main');
+
+  //refresh button
+  document.getElementById('btn-refresh')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-refresh');
+    btn.style.opacity = '0.4';
+    btn.style.pointerEvents = 'none';
+    await Promise.all([
+      loadIncidents(),
+      loadCrew(),
+      refreshHeaderStatus(),
+      STATE.resource.resource_type === 'LDC' ? loadSectorResources() : Promise.resolve(),
+    ]);
+    // If on map tab, also refresh markers
+    const mapPanel = document.getElementById('panel-map');
+    if (mapPanel?.classList.contains('active')) await refreshMapMarkers();
+    btn.style.opacity = '1';
+    btn.style.pointerEvents = 'auto';
+  });
 }
 
 async function loadPositionSection() {
@@ -203,10 +221,6 @@ function populateEventPanel() {
       r.event_radio_channels.description  || '';
   }
 
-  // Coordinator — fetch from resources where this resource's coordinator field is set
-  if (r.coordinator) {
-    document.getElementById('coordinator-name').textContent = r.coordinator.resource;
-  }
 }
 
 /* Filter teams (coordinator only) */
@@ -536,8 +550,10 @@ function switchTab(targetId) {
   if (targetId === 'panel-info') {
     loadPositionSection();  // ← reload when tab becomes visible
   }
-  if (targetId === 'panel-map' && STATE.resource?.resource_type === 'LDC') {
-    initCoordinatorMap();
-    invalidateCoordinatorMap();
+  if (targetId === 'panel-map') {
+    setTimeout(() => {
+      initMap();
+      invalidateMap();
+    }, 50);
   }
 }

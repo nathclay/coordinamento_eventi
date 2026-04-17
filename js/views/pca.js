@@ -1121,6 +1121,7 @@ function filterFreeUnits() {
   applyMapFilter();
 }
 
+
 function flyToRecentPositions() {
   PCA.activeFilters.has('recent') ? PCA.activeFilters.delete('recent') : PCA.activeFilters.add('recent');
   document.getElementById('btn-recent-pos').classList.toggle('active', PCA.activeFilters.has('recent'));

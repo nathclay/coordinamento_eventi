@@ -95,6 +95,11 @@
         <span class="status-dot free" id="status-dot"></span>
         <span id="status-label"></span>
       </div>
+        <button id="btn-refresh" style="
+          background:none;border:none;color:var(--text-secondary);
+          font-size:18px;cursor:pointer;padding:8px;line-height:1;">
+          ↻
+        </button>
       <div class="offline-badge" id="offline-badge">✕ offline</div>
     </header>
 
@@ -130,34 +135,8 @@
           </div>
         </div>
 
-        <div class="section-block">
-          <div class="section-label">Coordinatore</div>
-          <div class="contact-row">
-            <div class="contact-icon">👤</div>
-            <div class="contact-info">
-              <div class="contact-name" id="coordinator-name">—</div>
-              <div class="contact-detail">Coordinatore di settore</div>
-            </div>
-            <div class="contact-channel" id="coordinator-channel">—</div>
-          </div>
-        </div>
 
-        <!-- Coordinator only: shows all their resources -->
-        <div class="section-block coordinator-only" id="sector-resources-block">
-          <div class="section-label">Risorse nel tuo settore</div>
-          <div id="sector-resources-list">
-            <!-- JS injects resource rows here for coordinator -->
-          </div>
-        </div>
-
-        <div class="section-block">
-          <div class="section-label">Contatti emergenza</div>
-          <div id="emergency-contacts">
-            <!-- JS injects contact rows here -->
-          </div>
-        </div>
-
-      </div><!-- /panel-evento -->
+      </div>
 
       <!-- ── PANEL: INTERVENTI ── -->
       <div class="panel" id="panel-interventi">
@@ -172,6 +151,12 @@
           overflow-x:auto;white-space:nowrap;">
         </div>
 
+        <!-- En route section — shown only when non-empty via JS -->
+        <div id="enroute-section" style="display:none;">
+          <div class="incidents-section-title" style="color:var(--blue);">Da raggiungere</div>
+          <div id="enroute-incidents-list"></div>
+        </div>
+        
         <div class="incidents-section-title">Interventi attivi</div>
         <div id="active-incidents-list">
           <!-- JS injects incident cards here -->
@@ -240,9 +225,9 @@
 
       </div>
 
-      <!-- ── PANEL: MAPPA (coordinator only) ── -->
-      <div class="panel coordinator-only" id="panel-map">
-        <div id="coordinator-map" style="height:100%;"></div>
+      <!-- ── PANEL: MAPPA ── -->
+      <div class="panel" id="panel-map">
+        <div id="map" style="height:100%;"></div>
       </div>
 
     </div><!-- /panel-area -->
@@ -258,13 +243,13 @@
         <span class="tab-label">Interventi</span>
         <span class="tab-badge" id="incidents-badge">0</span>
       </button>
+      <button class="tab-btn" data-tab="panel-map">
+        <span class="tab-icon">🗺</span>
+        <span class="tab-label">Mappa</span>
+      </button>
       <button class="tab-btn" data-tab="panel-info">
         <span class="tab-icon">👤</span>
         <span class="tab-label">Modulo</span>
-      </button>
-      <button class="tab-btn coordinator-only" data-tab="panel-map">
-        <span class="tab-icon">🗺</span>
-        <span class="tab-label">Mappa</span>
       </button>
     </nav>
 

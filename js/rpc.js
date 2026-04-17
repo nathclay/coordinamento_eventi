@@ -40,7 +40,7 @@ async function fetchIncidents() {
       .from('incidents')
       .select(`
         id, incident_type, status, current_triage,
-        patient_name, patient_identifier, patient_age, patient_gender, created_at, updated_at, description,
+        patient_name, patient_identifier, patient_age, patient_gender, created_at, updated_at, description, geom, loation_description,
         incident_responses(id,
           resource_id, outcome, released_at, hospital_info, dest_pma_id, dest_hospital,
           resources!incident_responses_resource_id_fkey(resource, resource_type)
@@ -82,7 +82,7 @@ async function fetchIncidents() {
       .from('incidents')
       .select(`
         id, incident_type, status, current_triage,
-        patient_name, patient_identifier, patient_age, patient_gender, created_at, description, updated_at,
+        patient_name, patient_identifier, patient_age, patient_gender, created_at, description, updated_at, geom, location_description,
         incident_responses(
           resource_id, outcome, released_at, hospital_info, dest_pma_id, dest_hospital,
           resources!incident_responses_resource_id_fkey(resource, resource_type)
@@ -105,11 +105,12 @@ async function fetchIncidentDetail(incidentId) {
     .select(`
       *,
       incident_responses(
-        id, role, outcome, assigned_at, released_at, notes, hospital_info, resource_id, dest_pma_id, dest_hospital,
+        id, role, outcome, assigned_at, released_at, notes, hospital_info,
+        resource_id, dest_pma_id, dest_hospital, handoff_to_response_id,
         resources!incident_responses_resource_id_fkey(resource, resource_type)
       ),
       patient_assessments(
-        id, assessed_at, conscious, respiration, circulation,
+        id, assessed_at, response_id, conscious, respiration, circulation,
         walking, minor_injuries, heart_rate, spo2, breathing_rate, gcs_total,
         triage, description, clinical_notes, blood_pressure, temperature
       )
@@ -118,6 +119,32 @@ async function fetchIncidentDetail(incidentId) {
     .single();
 
   if (error) return null;
+
+  // Resolve handoff target resource names
+  const handoffIds = (data.incident_responses || [])
+    .map(r => r.handoff_to_response_id)
+    .filter(Boolean);
+
+  if (handoffIds.length > 0) {
+    const { data: handoffResponses } = await db
+      .from('incident_responses')
+      .select('id, resource_id, resources!incident_responses_resource_id_fkey(resource)')
+      .in('id', handoffIds);
+
+    // Attach to parent responses as handoff_resource_name
+    if (handoffResponses) {
+      const handoffMap = {};
+      handoffResponses.forEach(r => {
+        handoffMap[r.id] = r.resources?.resource || '—';
+      });
+      data.incident_responses.forEach(r => {
+        if (r.handoff_to_response_id) {
+          r.handoff_resource_name = handoffMap[r.handoff_to_response_id] || '—';
+        }
+      });
+    }
+  }
+
   return data;
 }
 
@@ -242,7 +269,7 @@ async function fetchCoordinatorCrew() {
 async function fetchSectorResources() {
   const { data } = await db
     .from('resources')
-    .select('id, resource, resource_type, resources_current_status(status, active_responses)')
+    .select('id, resource, resource_type, resources_current_status(status, active_responses, geom, location_updated_at)')
     .eq('event_id', STATE.resource.event_id)
     .eq('coordinator_id', STATE.resource.id)  // ← was .eq('coordinator', STATE.resource.resource)
     .order('resource');

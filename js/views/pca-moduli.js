@@ -171,11 +171,11 @@ async function updateCoordinator(resourceId, coordinatorId) {
     .eq('id', resourceId);
 
   if (error) {
-    showPCAToast('Errore aggiornamento coordinatore', 'error');
+    showToast('Errore aggiornamento coordinatore', 'error');
     return;
   }
 
-  showPCAToast('Coordinatore aggiornato ✓', 'success');
+  showToast('Coordinatore aggiornato ✓', 'success');
 
   // Update local PCA.allResources so the home map popup stays in sync
   const r = PCA.allResources.find(r => r.id === resourceId);

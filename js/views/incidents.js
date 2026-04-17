@@ -61,10 +61,12 @@ async function loadIncidents() {
 }
 
 function renderIncidents() {
-  const activeList  = document.getElementById('active-incidents-list');
-  const closedList  = document.getElementById('closed-incidents-list');
-  const emptyActive = document.getElementById('empty-active');
-  const emptyClosed = document.getElementById('empty-closed');
+  const activeList   = document.getElementById('active-incidents-list');
+  const closedList   = document.getElementById('closed-incidents-list');
+  const enRouteList  = document.getElementById('enroute-incidents-list');
+  const emptyActive  = document.getElementById('empty-active');
+  const emptyClosed  = document.getElementById('empty-closed');
+  const enRouteSection = document.getElementById('enroute-section');
 
   let incidents = STATE.incidents;
 
@@ -77,22 +79,43 @@ function renderIncidents() {
     );
   }
 
-  const active = incidents.filter(i => i._isActive);
+  const enRoute = incidents.filter(i => {
+    if (!i._isActive) return false;
+    const myResponse = (i.incident_responses || [])
+      .find(r => r.resource_id === STATE.resource.id);
+    return myResponse?.outcome === 'en_route_to_incident';
+  });
+
+  const active = incidents.filter(i => {
+    if (!i._isActive) return false;
+    const myResponse = (i.incident_responses || [])
+      .find(r => r.resource_id === STATE.resource.id);
+    return myResponse?.outcome !== 'en_route_to_incident';
+  });
+
   const closed = incidents.filter(i => !i._isActive);
 
+  // En route section — only show if non-empty
+  enRouteSection.style.display = enRoute.length > 0 ? 'block' : 'none';
+  enRouteList.innerHTML = '';
+  enRoute.forEach(i => enRouteList.appendChild(buildIncidentCard(i)));
+
+  // Active
   activeList.innerHTML = '';
   activeList.appendChild(emptyActive);
   emptyActive.style.display = active.length === 0 ? 'flex' : 'none';
   active.forEach(i => activeList.appendChild(buildIncidentCard(i)));
 
+  // Closed
   closedList.innerHTML = '';
   closedList.appendChild(emptyClosed);
   emptyClosed.style.display = closed.length === 0 ? 'flex' : 'none';
   closed.forEach(i => closedList.appendChild(buildIncidentCard(i)));
 
   const badge = document.getElementById('incidents-badge');
-  badge.textContent = active.length;
-  badge.classList.toggle('visible', active.length > 0);
+  const totalActive = enRoute.length + active.length;
+  badge.textContent = totalActive;
+  badge.classList.toggle('visible', totalActive > 0);
 }
 
 function buildIncidentCard(inc) {
@@ -120,7 +143,7 @@ function buildIncidentCard(inc) {
       <div class="incident-patient">Nome: ${inc.patient_name ? '<strong>' + inc.patient_name + '</strong>' : '<strong>Ignoto</strong>'}</div>        
         <div style="font-size:11px;color:var(--text-secondary);margin-top:3px;line-height:1.6;">
           Pettorale: ${inc.patient_identifier || 'ignoto'}<br>
-          Età: ${inc.patient_age || 'ignoto'} · Sesso: ${inc.patient_gender || 'ignoto'}
+          Età: ${inc.patient_age || 'ignoto'} · Sesso: ${inc.patient_gender || 'ignoto'}<br>Descr: ${inc.description || 'Nessuna'}
         </div>
       </div>
       <span class="incident-status-badge ${inc.status}">
@@ -146,7 +169,7 @@ function getIncidentStatusLabel(inc) {
       .find(r => r.resource_id === STATE.resource.id);
     if (myResponse?.outcome === 'en_route_to_pma')       return '🚑 → PMA';
     if (myResponse?.outcome === 'en_route_to_hospital')  return '🚑 → Ospedale';
-    if (myResponse?.outcome === 'en_route_to_incident')  return '🚨 In arrivo';
+    if (myResponse?.outcome === 'en_route_to_incident')  return '📍 Da raggiungere';
     return STATUS_LABELS[inc.status] || inc.status;
   }  
   // Closed — find this resource's response
@@ -175,7 +198,7 @@ function getIncidentStatusLabel(inc) {
 async function buildOutcomePanelHTML() {
   const allResources  = await fetchEventResources();
   const pmaResources  = allResources.filter(r => r.resource_type === 'PMA');
-  const teamResources = allResources.filter(r => !['PMA','LDC'].includes(r.resource_type));
+  const teamResources = allResources.filter(r => !['PMA','LDC', 'PCA'].includes(r.resource_type));
 
   const pmaOptions  = pmaResources.map(r =>
     `<option value="${r.id}">${r.resource}</option>`).join('');
@@ -200,10 +223,10 @@ async function buildOutcomePanelHTML() {
     </div>
 
     <div class="outcome-opt" data-outcome-type="trasportato_pma">
-      <span>🏥</span> Trasportato al PMA
+      <span>🏥</span> Trasportato al PMA 
     </div>
     <div class="outcome-detail" id="od-pma" style="display:none;">
-      <div class="outcome-detail-label">Quale PMA?</div>
+      <div class="outcome-detail-label">Quale PMA?<span class="required">*</span></div>
       <select id="od-pma-select">
         <option value="">— Seleziona —</option>${pmaOptions}
       </select>
@@ -467,8 +490,7 @@ async function submitIncident() {
       p_resource_id:        STATE.resource.id,
       p_personnel_id:       STATE.personnel?.id || null,   // ← new
       p_incident_type:      CLINICAL_TYPES.includes(STATE.resource.resource_type)
-                              ? document.getElementById('f-incident-type')?.value || 'other'
-                              : 'other',
+                              ? document.getElementById('f-incident-type')?.value || null : null,
       p_lng:                lng,
       p_lat:                lat,
       p_patient_name:       document.getElementById('f-patient-name')?.value    || null,
@@ -599,6 +621,25 @@ async function openIncidentDetail(incidentId) {
 
   document.getElementById('btn-reopen-incident')
     ?.addEventListener('click', () => reopenIncident(incidentId));
+
+    //Arrived button only for incidents in progress where this resource is en route (called from pca)
+  document.getElementById('btn-im-arrived')
+    ?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-im-arrived');
+      btn.disabled = true;
+      btn.textContent = 'Aggiornamento...';
+      const response = await findActiveResponse(incidentId);
+      if (!response) { showToast('Nessuna risposta attiva', 'error'); return; }
+      const { error } = await db
+        .from('incident_responses')
+        .update({ outcome: 'treating', arrived_at: new Date().toISOString() })
+        .eq('id', response.id);
+      if (error) { showToast('Errore: ' + error.message, 'error'); btn.disabled = false; btn.textContent = '✓ Sono arrivato'; return; }
+      showToast('Intervento preso in carico ✓', 'success');
+      closeModal('modal-detail');
+      await loadIncidents();
+      await refreshHeaderStatus();
+    });  
 
  // Toggle quick action panels
   [
@@ -744,6 +785,7 @@ async function openIncidentDetail(incidentId) {
 }
 
 async function buildDetailHTML(inc) {
+  
   const assessments = (inc.patient_assessments || [])
     .sort((b, a) => new Date(a.assessed_at) - new Date(b.assessed_at));
 
@@ -756,16 +798,103 @@ async function buildDetailHTML(inc) {
   // Fetch resources once for all dropdowns
   const allResources    = await fetchEventResources();
   const pmaResources    = allResources.filter(r => r.resource_type === 'PMA');
-  const teamResources   = allResources.filter(r => !['PMA','LDC'].includes(r.resource_type));
+  const teamResources   = allResources.filter(r => !['PMA','LDC','PCA'].includes(r.resource_type));
   const pmaOptionsHTML  = pmaResources.map(r =>
     `<option value="${r.id}">${r.resource}</option>`).join('');
   const teamOptionsHTML = teamResources.map(r =>
     `<option value="${r.id}">${r.resource} (${r.resource_type})</option>`).join('');
 
   const isClinical = CLINICAL_TYPES.includes(STATE.resource.resource_type);
-
     
-  const buildAssessmentCard = (a) => `
+   const isCoordinator = STATE.resource.resource_type === 'LDC';
+
+  const myResponse = isCoordinator ? null : (inc.incident_responses || [])
+    .find(r => r.resource_id === STATE.resource.id &&
+      ['treating','en_route_to_incident','en_route_to_pma','en_route_to_hospital'].includes(r.outcome));
+
+  const isMyEnRoute       = myResponse?.outcome === 'en_route_to_incident';
+  const canClose          = !isCoordinator && myResponse?.outcome === 'treating';
+  const isEnRoutePma      = myResponse?.outcome === 'en_route_to_pma';
+  const isEnRouteHospital = myResponse?.outcome === 'en_route_to_hospital';
+  const isEnRoute         = isEnRoutePma || isEnRouteHospital;
+
+  const canReopen = isCoordinator ? false
+    : !myResponse && (inc.incident_responses || []).some(
+        r => r.resource_id === STATE.resource.id
+      );
+
+  const outcomePanelHTML = canClose ? await buildOutcomePanelHTML() : '';
+
+   //build outcome summary for closed incidents
+  const myClosedResponse = canReopen
+    ? (inc.incident_responses || []).find(r => r.resource_id === STATE.resource.id)
+    : null;
+  const outcomeBlock = myClosedResponse ? (() => {
+    const o = myClosedResponse.outcome;
+    let text = '';
+    if (o === 'treated_and_released') {
+      text = '✔ Trattato e dimesso';
+    } else if (o === 'cancelled') {
+      text = '✕ Annullato / Falso allarme';
+    } else if (o === 'refused_transport') {
+      text = '🚶 Paziente ha rifiutato il trasporto';
+    } else if (o === 'consegnato_118') {
+      text = '🚨 Consegnato al 118';
+    } else if (o === 'handed_off') {
+      const receivingResource = myClosedResponse.handoff_resource_name || '—';
+      text = `🤝 Consegnato a ${receivingResource}`;
+    } else if (o === 'taken_to_pma') {
+      // find the pma resource name from dest_pma_id via allResources
+      const pma = [...pmaResources, ...allResources].find(r => r.id === myClosedResponse.dest_pma_id);
+      text = `🏥 Trasportato al PMA${pma ? ': ' + pma.resource : ''}`;
+    } else if (o === 'taken_to_hospital') {
+      text = `🚑 Ospedalizzato${myClosedResponse.dest_hospital ? ': ' + myClosedResponse.dest_hospital : ''}`;
+    } else {
+      text = o;
+    }
+    return `
+      <div style="background:var(--bg-card);border:1.5px solid var(--border-bright);
+        border-radius:var(--radius);padding:12px;margin-bottom:12px;
+        font-size:14px;font-weight:600;color:var(--text-primary);">
+        ${text}
+      </div>`;
+  })() : '';
+
+  // build resource name lookup from response_id
+  const responseResourceMap = {};
+  (inc.incident_responses || []).forEach(r => {
+    responseResourceMap[r.id] = r.resources?.resource || '—';
+  });
+
+  // active response resource ids
+  const ACTIVE_OUTCOMES = ['treating','en_route_to_incident','en_route_to_pma','en_route_to_hospital'];
+  const activeResourceIds = new Set(
+    (inc.incident_responses || [])
+      .filter(r => ACTIVE_OUTCOMES.includes(r.outcome))
+      .map(r => r.resource_id)
+  );
+
+  // teams row in detail header
+  const teamsHTML = (() => {
+    const responses = (inc.incident_responses || [])
+      .filter(r => r.resources?.resource);
+    if (responses.length === 0) return '';
+    return `
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:6px;">
+        ${responses.map(r => {
+          const isActive = ACTIVE_OUTCOMES.includes(r.outcome);
+          return `<span style="font-weight:${isActive ? 'bold' : 'normal'};
+            color:${isActive ? 'var(--text-primary)' : 'var(--text-secondary)'};">
+            ${r.resources.resource}
+          </span>`;
+        }).join(' · ')}
+      </div>`;
+  })();
+
+  
+  const buildAssessmentCard = (a) => {
+    const resourceName = responseResourceMap[a.response_id] || '—';
+    return `
     <div style="background:var(--bg-card);border:1.5px solid var(--border-bright);
       border-radius:var(--radius-lg);padding:12px;margin-bottom:10px;">
       <div class="assessment-header">
@@ -776,7 +905,7 @@ async function buildDetailHTML(inc) {
             a.triage === 'green'  ? 'var(--triage-green)'  :
             '#8a9ab0'
           };"></div>` : ''}
-          <span class="assessment-by">Valutazione</span>
+          <span class="assessment-by">${resourceName}</span>
         </div>
         <span class="assessment-time">
           ${new Date(a.assessed_at).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}
@@ -788,7 +917,7 @@ async function buildDetailHTML(inc) {
           text-transform:uppercase;font-weight:700;margin-bottom:4px;">Descrizione</div>
         <div style="font-size:13px;color:var(--text-primary);line-height:1.5;
           padding:8px 10px;background:var(--bg-page);
-          border-radius:var(--radius);border:1px solid var(--border);">
+          border-radius:var(--radius);border:1px solid var(--border);word-break:break-word;">
           ${a.description}
         </div>
       </div>` : ''}
@@ -798,7 +927,7 @@ async function buildDetailHTML(inc) {
           text-transform:uppercase;font-weight:700;margin-bottom:4px;">🩺 Note cliniche</div>
         <div style="font-size:13px;color:var(--text-primary);line-height:1.5;
           padding:8px 10px;background:var(--bg-page);
-          border-radius:var(--radius);border-left:3px solid var(--blue);">
+          border-radius:var(--radius);border-left:3px solid var(--blue);word-break:break-word;">
           ${a.clinical_notes}
         </div>
       </div>` : ''}
@@ -817,6 +946,7 @@ async function buildDetailHTML(inc) {
         <div class="vital-box"><div class="vital-label">Temp</div><div class="vital-value">${a.temperature ?? '—'}</div></div>
       </div>
     </div>`;
+  };
 
   const assessmentHTML = assessments.length === 0
     ? '<div class="empty-state"><div class="empty-text">Nessuna valutazione</div></div>'
@@ -846,34 +976,60 @@ async function buildDetailHTML(inc) {
             ▼ Mostra ${n} valutazion${n===1?'e':'i'} precedent${n===1?'e':'i'}
           </button>`;
       })();
+  
 
-  const isCoordinator = STATE.resource.resource_type === 'LDC';
 
-  const myResponse = isCoordinator ? null : (inc.incident_responses || [])
-    .find(r => r.resource_id === STATE.resource.id &&
-      ['treating','en_route_to_pma','en_route_to_hospital'].includes(r.outcome));
 
-  const canClose          = !isCoordinator && myResponse?.outcome === 'treating';
-  const isEnRoutePma      = myResponse?.outcome === 'en_route_to_pma';
-  const isEnRouteHospital = myResponse?.outcome === 'en_route_to_hospital';
-  const isEnRoute         = isEnRoutePma || isEnRouteHospital;
+  let incidentLat = null, incidentLng = null;
+  if (inc.geom?.coordinates) {
+    incidentLng = inc.geom.coordinates[0];
+    incidentLat = inc.geom.coordinates[1];
+  }
 
-  const canReopen = isCoordinator ? false
-    : !myResponse && (inc.incident_responses || []).some(
-        r => r.resource_id === STATE.resource.id
-      );
+  const enRouteBlock = isMyEnRoute ? `
+    <div style="background:var(--bg-card);border:1.5px solid var(--blue);
+      border-radius:var(--radius);padding:12px;margin-bottom:12px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;
+        text-transform:uppercase;color:var(--blue);margin-bottom:8px;">
+        📍 Da raggiungere
+      </div>
+      ${inc.location_description ? `
+      <div style="font-size:14px;color:var(--text-primary);font-weight:600;
+        margin-bottom:10px;word-break:break-word;">
+        ${inc.location_description}
+      </div>` : ''}
+      ${incidentLat !== null ? `
+      <div style="border-radius:var(--radius);overflow:hidden;margin-bottom:10px;">
+        <iframe
+          style="width:100%;height:180px;border:none;display:block;"
+          src="https://www.openstreetmap.org/export/embed.html?bbox=${incidentLng-0.002},${incidentLat-0.002},${incidentLng+0.002},${incidentLat+0.002}&layer=mapnik&marker=${incidentLat},${incidentLng}">
+        </iframe>
+      </div>
+      <a href="geo:${incidentLat},${incidentLng}" style="
+        display:block;width:100%;padding:11px;border-radius:var(--radius);
+        border:1.5px solid var(--blue);color:#1060cc;font-size:13px;
+        font-weight:600;text-align:center;text-decoration:none;
+        background:var(--blue-dim);margin-bottom:10px;box-sizing:border-box;">
+        🗺 Apri in Maps
+      </a>` : ''}
+      <button id="btn-im-arrived" style="
+        width:100%;padding:13px;border-radius:var(--radius);
+        background:var(--green);color:white;font-size:13px;font-weight:bold;
+        font-family:var(--font);cursor:pointer;border:none;letter-spacing:1px;">
+        ✓ Sono arrivato
+      </button>
+    </div>` : '';
 
-  const outcomePanelHTML = canClose ? await buildOutcomePanelHTML() : '';
-
-  return `
+  return `${enRouteBlock}${outcomeBlock}
     <div style="background:var(--bg-card);border-radius:var(--radius);padding:12px;margin-bottom:8px;">
-      <div style="font-size:16px;font-weight:bold;color:var(--text-primary);">
+      <div style="font-size:16px;font-weight:bold;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
         ${inc.patient_name || 'Paziente ignoto'}
       </div>
       <div style="font-size:12px;color:var(--text-secondary);margin-top:6px;line-height:1.8;">
         Pettorale: ${inc.patient_identifier || '—'}<br>
-        Età: ${inc.patient_age || '—'} · Sesso: ${inc.patient_gender || '—'}
+        Età: ${inc.patient_age || '—'} · Sesso: ${inc.patient_gender || '—'}<br>Descrizione: ${inc.description || '—'}
       </div>
+      ${teamsHTML}
     </div>
 
     <button id="btn-edit-patient" style="
@@ -965,7 +1121,7 @@ async function buildDetailHTML(inc) {
         <div id="od-enroute-pma" style="display:none;flex-direction:column;gap:8px;
           padding:12px;background:var(--bg-card);border-radius:var(--radius);
           border:1px solid var(--border-bright);">
-          <div class="outcome-detail-label">Quale PMA?</div>
+          <div class="outcome-detail-label">Quale PMA? <span class="required">*</span></div>
           <select id="enroute-pma-select" style="width:100%;padding:10px;
             border-radius:var(--radius);border:1.5px solid var(--border-bright);
             background:var(--bg-input);font-family:var(--font);font-size:14px;
@@ -990,7 +1146,7 @@ async function buildDetailHTML(inc) {
         <div id="od-enroute-hospital" style="display:none;flex-direction:column;gap:8px;
           padding:12px;background:var(--bg-card);border-radius:var(--radius);
           border:1px solid var(--border-bright);">
-          <div class="outcome-detail-label">Nome ospedale</div>
+          <div class="outcome-detail-label">Nome ospedale <span class="required">*</span></div>
           <input type="text" id="enroute-hospital-name" placeholder="Nome ospedale..."
             style="width:100%;padding:10px;border-radius:var(--radius);
             border:1.5px solid var(--border-bright);background:var(--bg-input);
@@ -1013,7 +1169,7 @@ async function buildDetailHTML(inc) {
         <div id="od-call-team" style="display:none;flex-direction:column;gap:8px;
           padding:12px;background:var(--bg-card);border-radius:var(--radius);
           border:1px solid var(--border-bright);">
-          <div class="outcome-detail-label">Quale squadra?</div>
+          <div class="outcome-detail-label">Quale squadra? <span class="required">*</span></div>
           <select id="call-team-select" style="width:100%;padding:10px;
             border-radius:var(--radius);border:1.5px solid var(--border-bright);
             background:var(--bg-input);font-family:var(--font);font-size:14px;
