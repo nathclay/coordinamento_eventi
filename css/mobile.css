@@ -1218,3 +1218,77 @@ body.is-coordinator #coordinator-resources-block {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+
+
+/* ----------------------------------------------------------------
+   RICH NOTE CONTENT (notes_general / notes_coordinators)
+---------------------------------------------------------------- */
+#event-notes-content,
+#resource-notes-content {
+  font-family: var(--font);
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+#event-notes-content p,
+#event-notes-content div,
+#resource-notes-content p,
+#resource-notes-content div {
+  margin: 0 0 4px;
+}
+
+#event-notes-content b,
+#event-notes-content strong,
+#resource-notes-content b,
+#resource-notes-content strong {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+#event-notes-content i,
+#event-notes-content em,
+#resource-notes-content i,
+#resource-notes-content em {
+  font-style: italic;
+}
+
+#event-notes-content u,
+#resource-notes-content u {
+  text-decoration: underline;
+}
+
+#event-notes-content ul,
+#resource-notes-content ul {
+  padding-left: 18px;
+  list-style: disc;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+#event-notes-content li,
+#resource-notes-content li {
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+#event-notes-content a,
+#resource-notes-content a {
+  color: var(--blue);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+
+
+#panel-map {
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+#panel-map.active {
+  display: flex;
+}

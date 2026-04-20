@@ -105,6 +105,7 @@ async function initMap() {
     maxZoom: 19,
   }).addTo(mapInstance);
 
+  await loadEventGeoLayers();
   await refreshMapMarkers();
 }
 
@@ -163,4 +164,103 @@ async function refreshMapMarkers() {
 
 function invalidateMap() {
   if (mapInstance) setTimeout(() => mapInstance.invalidateSize(), 50);
+}
+
+async function refreshMapInfoBar() {
+  const ev = STATE.event;
+
+  // Row 1 — last position time
+  const pos = await fetchResourcePosition();
+  const timeEl = document.getElementById('map-position-time');
+  if (pos?.updated_at) {
+    timeEl.textContent = new Date(pos.updated_at)
+      .toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  } else {
+    timeEl.textContent = 'non ancora inviata';
+  }
+
+  // Send position button
+  const sendBtn = document.getElementById('btn-map-send-position');
+  if (sendBtn && !sendBtn.dataset.wired) {
+    sendBtn.dataset.wired = '1';
+    sendBtn.addEventListener('click', async () => {
+      sendBtn.textContent = '📍 Localizzazione...';
+      sendBtn.disabled = true;
+      try {
+        const pos = await getCurrentPosition();
+        await insertLocation(pos.coords);
+        document.getElementById('map-position-time').textContent =
+          new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+        await refreshMapMarkers();
+        showToast('Posizione inviata ✓', 'success');
+      } catch (_) {
+        showToast('GPS non disponibile', 'error');
+      } finally {
+        sendBtn.textContent = '📍 Invia posizione attuale';
+        sendBtn.disabled = false;
+      }
+    });
+  }
+
+  // Cerca button
+  const cercaBtn = document.getElementById('btn-map-cerca');
+  if (cercaBtn && !cercaBtn.dataset.wired) {
+    cercaBtn.dataset.wired = '1';
+    cercaBtn.addEventListener('click', () => {
+      showToast('Funzione non ancora disponibile', 'error');
+    });
+  }
+
+  // Row 2 — sector (is_grid)
+  const sectorRow = document.getElementById('map-sector-row');
+  if (ev?.is_grid) {
+    sectorRow.style.display = '';
+    document.getElementById('map-sector-value').textContent = '…';
+  }
+
+  // Row 3 — km (is_route)
+  const kmRow = document.getElementById('map-km-row');
+  if (ev?.is_route) {
+    kmRow.style.display = '';
+    document.getElementById('map-km-value').textContent = '…';
+  }
+}
+
+async function loadEventGeoLayers() {
+  if (!mapInstance || !STATE.event) return;
+  const ev = STATE.event;
+
+  if (ev.is_route) {
+    const { data } = await db
+      .from('event_route')
+      .select('geom, name')
+      .eq('event_id', STATE.resource.event_id);
+
+    (data || []).forEach(row => {
+      if (!row.geom) return;
+      const geom = typeof row.geom === 'string' ? JSON.parse(row.geom) : row.geom;
+      if (geom.crs) delete geom.crs;
+      L.geoJSON({ type: 'Feature', geometry: geom, properties: {} }, {
+        style: { color: '#f0883e', weight: 3, opacity: 0.8 },
+      }).bindPopup(`<strong>${row.name || 'Percorso'}</strong>`)
+        .addTo(mapInstance);
+    });
+  }
+
+  if (ev.is_grid) {
+    const { data } = await db
+      .from('grid')
+      .select('geom, label')
+      .eq('event_id', STATE.resource.event_id);
+
+    (data || []).forEach(row => {
+      if (!row.geom) return;
+      const geom = typeof row.geom === 'string' ? JSON.parse(row.geom) : row.geom;
+      if (geom.crs) delete geom.crs;
+      L.geoJSON({ type: 'Feature', geometry: geom, properties: {} }, {
+        style: { color: '#58a6ff', weight: 1.5, opacity: 0.7, fillOpacity: 0.08, fillColor: '#58a6ff' },
+      }).bindPopup(`<strong>${row.label || '—'}</strong>`)
+        .addTo(mapInstance);
+    });
+  }
 }

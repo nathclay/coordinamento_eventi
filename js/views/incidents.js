@@ -102,7 +102,7 @@ function buildPatientHTML(values = {}) {
     </div>`;
 }
 
-function buildBaseConditionsHTML(values = {}) {
+function buildBaseConditionsHTML(values = {}, isAssessment = false, isClinical = false) {
   const fields = [
     { key: 'conscious',      label: 'Coscienza',       required: true },
     { key: 'respiration',    label: 'Respiro',          required: true },
@@ -125,6 +125,30 @@ function buildBaseConditionsHTML(values = {}) {
       </div>`;
   }).join('');
 
+  const basicVitals = (isAssessment && !isClinical) ? `
+  <div class="form-row" style="margin-bottom:10px;">
+        <div class="input-group" style="flex:1;">
+          <label>FR</label>
+          <input type="number" id="f-breathing-rate" placeholder="—" min="0" max="300"
+            value="${values.breathing_rate || ''}" />
+        </div>
+        <div class="input-group" style="flex:1;">
+          <label>SpO2</label>
+          <input type="number" id="f-spo2" placeholder="—" min="0" max="100"
+            value="${values.spo2 || ''}" />
+        </div>
+        <div class="input-group" style="flex:1;">
+          <label>FC</label>
+          <input type="number" id="f-heart-rate" placeholder="—" min="0" max="60"
+            value="${values.heart_rate || ''}" />
+        </div>
+        <div class="input-group" style="flex:1;">
+          <label>PA</label>
+          <input type="text" id="f-blood-pressure" placeholder="—"
+            value="${values.blood_pressure || ''}" />
+        </div>
+      </div>` : '';
+
   return `
     <div class="form-section">
       <div class="form-section-title">Condizioni di base</div>
@@ -134,7 +158,8 @@ function buildBaseConditionsHTML(values = {}) {
       <div class="form-section-title">Descrizione <span class="required">*</span></div>
       <textarea id="f-description" rows="3"
         placeholder="Descrizione dell'intervento...">${values.description || ''}</textarea>
-    </div>`;
+    </div>
+    ${basicVitals}`;
 }
 
 function buildClinicalHTML(values = {}, isAssessment = false) {
@@ -348,6 +373,7 @@ function renderIncidents() {
   const emptyClosed  = document.getElementById('empty-closed');
   const enRouteSection = document.getElementById('enroute-section');
 
+  const isCoord = STATE.resource.resource_type === 'LDC';
   let incidents = STATE.incidents;
 
   // Apply team filter if coordinator has one selected
@@ -359,7 +385,7 @@ function renderIncidents() {
     );
   }
 
-  const enRoute = incidents.filter(i => {
+  const enRoute = isCoord ? [] : incidents.filter(i => {
     if (!i._isActive) return false;
     const myResponse = (i.incident_responses || [])
       .find(r => r.resource_id === STATE.resource.id);
@@ -601,7 +627,7 @@ async function openIncidentForm() {
   const body = document.querySelector('#modal-incident .modal-body');
   body.innerHTML = `
     ${buildPatientHTML()}
-    ${buildBaseConditionsHTML({ conscious: true, respiration: true, circulation: true })}
+    ${buildBaseConditionsHTML({ conscious: true, respiration: true, circulation: true }, false, isClinical)}
     ${isClinical ? buildClinicalHTML() : ''}
     ${buildLocationTimeHTML()}
 
@@ -1612,7 +1638,7 @@ async function openAssessmentForm(incidentId, previous = null) {
 
   const body = document.querySelector('#modal-assessment .modal-body');
   body.innerHTML = `
-    ${buildBaseConditionsHTML(src)}
+    ${buildBaseConditionsHTML(src, true, isClinical)}
     ${isClinical ? buildClinicalHTML(src, true) : ''}
     <button class="btn-submit-incident" id="btn-submit-assessment">
       Salva Valutazione

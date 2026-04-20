@@ -136,6 +136,7 @@ function buildRichEditor(id, content) {
         <div class="rich-toolbar-sep"></div>
         <button type="button" title="Lista"        onclick="editorCmd('${id}','insertUnorderedList')">≡</button>
         <button type="button" title="Link"         onclick="editorInsertLink('${id}')">🔗</button>
+        <button type="button" title="Telefono"     onclick="editorInsertPhone('${id}')">📞</button>
         <div class="rich-toolbar-sep"></div>
         <button type="button" title="Pulisci"      onclick="editorCmd('${id}','removeFormat')">✕</button>
       </div>
@@ -162,6 +163,18 @@ function editorInsertLink(id) {
   // Make link open in new tab
   const editor = document.getElementById(id);
   editor?.querySelectorAll('a').forEach(a => a.setAttribute('target', '_blank'));
+}
+
+function editorInsertPhone(id) {
+  const raw = prompt('Numero di telefono:');
+  if (!raw) return;
+  const number = raw.trim();
+  const href   = 'tel:' + number.replace(/\s+/g, '');
+  const html   = `<a href="${href}" style="text-decoration:none;">📞 <span style="color:var(--blue);font-weight:600;">${number}</span></a>`;
+  const editor = document.getElementById(id);
+  if (!editor) return;
+  editor.focus();
+  document.execCommand('insertHTML', false, html);
 }
 
 async function saveNotes(tab) {

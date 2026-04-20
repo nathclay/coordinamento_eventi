@@ -134,7 +134,16 @@
             </div>
           </div>
         </div>
-
+        <div class="section-block" id="event-notes-block" style="display:none;">
+          <div class="section-label">Note evento</div>
+          <div id="event-notes-content"
+            style="font-size:13px;color:var(--text-primary);line-height:1.7;"></div>
+        </div>
+        <div class="section-block" id="resource-notes-block" style="display:none;border-bottom:none;">
+          <div class="section-label">Note operative</div>
+          <div id="resource-notes-content"
+            style="font-size:13px;color:var(--text-secondary);line-height:1.6;"></div>
+        </div>
 
       </div>
 
@@ -201,17 +210,7 @@
 
         <div class="section-block" id="coordinator-crew-block" style="display:none;">
           <!-- JS populates this -->
-        </div>
-        
-        <div class="section-block">
-          <div class="section-label">Posizione</div>
-          <div id="mini-map-container"></div>
-        </div>
-
-        <div class="section-block">
-          <div class="section-label">Note operative</div>
-          <div id="resource-notes" style="font-size:12px;color:var(--text-secondary);line-height:1.6;">—</div>
-        </div>
+        </div>       
 
         <div class="section-block" style="border-bottom:none;">
           <button id="btn-logout" style="
@@ -227,7 +226,53 @@
 
       <!-- ── PANEL: MAPPA ── -->
       <div class="panel" id="panel-map">
-        <div id="map" style="height:100%;"></div>
+
+        <!-- Info bar -->
+        <div id="map-info-bar" style="
+          flex-shrink:0;
+          background:var(--bg-panel);
+          border-bottom:1.5px solid var(--border);
+          padding:10px 16px;
+          display:flex;
+          flex-direction:column;
+          gap:6px;">
+          <!-- Row 1: last position sent -->
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <div id="map-position-label" style="
+              font-size:12px;font-weight:600;color:var(--text-secondary);">
+              📍 Posizione inviata al PCA alle: <span id="map-position-time" style="color:var(--text-primary);">—</span>
+            </div>
+            <button id="btn-map-cerca" style="
+              padding:6px 14px;border-radius:20px;
+              border:1.5px solid var(--blue);background:var(--blue-dim);
+              color:#1060cc;font-size:12px;font-weight:700;
+              font-family:var(--font);cursor:pointer;white-space:nowrap;
+              flex-shrink:0;">
+              Cerca 📡
+            </button>
+          </div>
+          <button id="btn-map-send-position" style="
+            width:100%;padding:9px 12px;border-radius:var(--radius);
+            border:1.5px solid var(--border-bright);background:var(--bg-card);
+            color:var(--text-primary);font-size:12px;font-weight:600;
+            font-family:var(--font);cursor:pointer;text-align:center;">
+            📍 Invia posizione attuale
+          </button>
+          <!-- Row 2: sector (is_grid only) -->
+          <div id="map-sector-row" style="display:none;
+            font-size:12px;font-weight:600;color:var(--text-secondary);">
+            🗂 Ti trovi nel settore: <span id="map-sector-value"
+              style="color:var(--text-primary);">—</span>
+          </div>
+          <!-- Row 3: km (is_route only) -->
+          <div id="map-km-row" style="display:none;
+            font-size:12px;font-weight:600;color:var(--text-secondary);">
+            📏 Sei vicino al km: <span id="map-km-value"
+              style="color:var(--text-primary);">—</span>
+          </div>
+        </div>
+        <!-- Map fills remaining space -->
+        <div id="map" style="flex:1;min-height:0;"></div>
       </div>
 
     </div>

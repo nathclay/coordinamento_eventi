@@ -50,8 +50,8 @@ async function loadMobileView() {
     r.resource;
   document.getElementById('hero-resource-type').textContent =
     RESOURCE_TYPE_LABELS[r.resource_type] || r.resource_type;
-  document.getElementById('resource-notes').textContent =
-    r.notes || 'Nessuna nota operativa';
+  const notesEl = document.getElementById('resource-notes');
+  if (notesEl) notesEl.textContent = r.notes || 'Nessuna nota operativa';
 
   // Event panel
   populateEventPanel();
@@ -127,7 +127,7 @@ async function loadPositionSection() {
     const lng = coords[0].toFixed(5);
 
     const label = rcs.type === 'live'
-      ? `✓ Posizione inviata al PCA — ${new Date(rcs.updated_at).toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit'})}`
+      ? `✓ Posizione inviata al PCA alle — ${new Date(rcs.updated_at).toLocaleTimeString('it-IT', {hour:'2-digit',minute:'2-digit'})}`
       : '📍 Posizione iniziale del modulo';
 
     const labelColor = rcs.type === 'live' ? 'var(--green)' : 'var(--text-secondary)';
@@ -219,6 +219,25 @@ function populateEventPanel() {
       r.event_radio_channels.channel_name || '—';
     document.getElementById('radio-channel-desc').textContent =
       r.event_radio_channels.description  || '';
+  }
+  const isCoord = r.resource_type === 'LDC';
+  const eventNotes = isCoord
+    ? [ev?.notes_general, ev?.notes_coordinators].filter(Boolean).join('<hr style="border-color:var(--border-color);margin:8px 0;">')
+    : (ev?.notes_general || '');
+
+  const eventNotesBlock = document.getElementById('event-notes-block');
+  const eventNotesContent = document.getElementById('event-notes-content');
+  if (eventNotes && eventNotesContent) {
+    eventNotesContent.innerHTML = eventNotes;
+    eventNotesBlock.style.display = '';
+  }
+
+  // Note operative — resource-level notes
+  const resourceNotesBlock = document.getElementById('resource-notes-block');
+  const resourceNotesContent = document.getElementById('resource-notes-content');
+  if (r.notes && resourceNotesContent) {
+    resourceNotesContent.textContent = r.notes;
+    resourceNotesBlock.style.display = '';
   }
 
 }
@@ -547,10 +566,8 @@ function switchTab(targetId) {
     p.classList.toggle('active', p.id === targetId)
   );
 
-  if (targetId === 'panel-info') {
-    loadPositionSection();  // ← reload when tab becomes visible
-  }
   if (targetId === 'panel-map') {
+    refreshMapInfoBar();
     setTimeout(() => {
       initMap();
       invalidateMap();

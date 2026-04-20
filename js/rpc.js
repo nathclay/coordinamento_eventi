@@ -40,7 +40,7 @@ async function fetchIncidents() {
       .from('incidents')
       .select(`
         id, incident_type, status, current_triage,
-        patient_name, patient_identifier, patient_age, patient_gender, created_at, updated_at, description, geom, loation_description,
+        patient_name, patient_identifier, patient_age, patient_gender, created_at, updated_at, description, geom, location_description,
         incident_responses(id,
           resource_id, outcome, released_at, hospital_info, dest_pma_id, dest_hospital,
           resources!incident_responses_resource_id_fkey(resource, resource_type)
