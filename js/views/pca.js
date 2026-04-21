@@ -175,8 +175,6 @@ function buildGeoLayer(def, rows) {
   const group = L.layerGroup();
   const s     = GEO_STYLES[def.key];
 
-
-
   rows.forEach(row => {
     if (!row.geom) return;
     const geom = typeof row.geom === 'string' ? JSON.parse(row.geom) : row.geom;
@@ -188,10 +186,26 @@ function buildGeoLayer(def, rows) {
       }).bindPopup(`<strong>${row.name || 'Percorso'}</strong>`).addTo(group);
     }
     else if (def.key === 'grid') {
-      L.geoJSON({ type: 'Feature', geometry: geom, properties: {} }, {
+      const cellLayer = L.geoJSON({ type: 'Feature', geometry: geom, properties: {} }, {
         style: { color: s.color, weight: s.weight, opacity: s.opacity,
-                 fillOpacity: s.fillOpacity, fillColor: s.color },
+                fillOpacity: s.fillOpacity, fillColor: s.color },
       }).bindPopup(`<strong>${row.label || '—'}</strong>`).addTo(group);
+
+      if (row.label) {
+        // Compute center directly from geojson, not from rendered layer
+        const b = L.geoJSON({ type: 'Feature', geometry: geom }).getBounds();
+        const center = b.getCenter();
+        L.marker([center.lat, center.lng], {
+          icon: L.divIcon({
+            className: '',
+            html: `<div style="font-size:10px;font-weight:700;white-space:nowrap;color:${s.color};">${row.label}</div>`,
+            iconSize:   [80, 16],
+            iconAnchor: [40, 8],
+          }),
+          interactive: false,
+          zIndexOffset: -100,
+        }).addTo(group);
+      }
     }
     else if (def.key === 'fixed' || def.key === 'markers' || def.key === 'poi') {
       if (!geom.coordinates) return;
@@ -209,10 +223,10 @@ function buildGeoLayer(def, rows) {
         const arrowTip  = boxH + 10;
         const totalH    = boxH + 10;
         const safeLbl = label
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
         const svg = `
           <svg xmlns="http://www.w3.org/2000/svg"
             width="${boxW}" height="${totalH}"
@@ -261,8 +275,6 @@ function toggleGeoLayer(key, btn) {
   } else {
     PCA.map.addLayer(layer);
     btn.classList.add('active');
-    console.log('added layer', key, 'layer size:', layer.getLayers().length);
-
   }
 }
 
@@ -660,9 +672,9 @@ function renderPMAList(pmas) {
 function renderResourceList(containerId, resources) {
   const el = document.getElementById(containerId);
   if (!el) return;
-  if (PCA.activeFilter === 'free') {
+  if (PCA.activeFilters === 'free') {
     resources = resources.filter(r => r.resources_current_status?.status === 'free');
-  } else if (PCA.activeFilter === 'recent') {
+  } else if (PCA.activeFilters === 'recent') {
     const cutoff = Date.now() - 15 * 60 * 1000;
     resources = resources.filter(r => {
       const t = r.resources_current_status?.location_updated_at;

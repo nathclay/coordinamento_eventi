@@ -178,7 +178,37 @@ async function updateMapZone(lat, lng) {
     p_lat:      lat,
   });
 
-  el.textContent = (data && data.length > 0) ? data[0].grid_label : '—';
+  el.textContent = (data && data.length > 0) ? data[0].grid_label : 'Fuori Zona';
+  if (data && data.length > 0) {
+    el.textContent = data[0].grid_label;
+    el.style.color = 'var(--text-primary)';
+  } else {
+    el.textContent = 'Fuori zona';
+    el.style.color = 'var(--text-secondary)';
+  }
+}
+
+async function updateMapKm(lat, lng) {
+  if (!STATE.event?.is_route) return;
+
+  const el = document.getElementById('map-km-value');
+  if (!el) return;
+
+  const { data } = await db.rpc('get_nearest_route_marker', {
+    p_event_id: STATE.resource.event_id,
+    p_lng:      lng,
+    p_lat:      lat,
+  });
+
+  if (data && data.length > 0) {
+    const m = data[0];
+    const label = m.label ? `${m.km} — ${m.label}` : `${m.km}`;
+    el.textContent = label;
+    el.style.color = 'var(--text-primary)';
+  } else {
+    el.textContent = '—';
+    el.style.color = 'var(--text-secondary)';
+  }
 }
 
 async function refreshMapInfoBar() {
@@ -208,6 +238,7 @@ async function refreshMapInfoBar() {
           new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
         await refreshMapMarkers();
         await updateMapZone(pos.coords.latitude, pos.coords.longitude);  
+        await updateMapKm(pos.coords.latitude, pos.coords.longitude);  
         showToast('Posizione inviata ✓', 'success');
       } catch (_) {
         showToast('GPS non disponibile', 'error');
@@ -247,7 +278,16 @@ async function refreshMapInfoBar() {
   const kmRow = document.getElementById('map-km-row');
   if (ev?.is_route) {
     kmRow.style.display = '';
-    document.getElementById('map-km-value').textContent = '…';
+    // Seed with last known position
+    if (pos?.geom?.coordinates) {
+      const [lng, lat] = pos.geom.coordinates;
+      updateMapKm(lat, lng);
+    }
+    // Register GPS callback once
+    if (!kmRow.dataset.kmWired) {
+      kmRow.dataset.kmWired = '1';
+      onLocationSent(coords => updateMapKm(coords.latitude, coords.longitude));
+    }
   }
 }
 
@@ -282,10 +322,27 @@ async function loadEventGeoLayers() {
       if (!row.geom) return;
       const geom = typeof row.geom === 'string' ? JSON.parse(row.geom) : row.geom;
       if (geom.crs) delete geom.crs;
-      L.geoJSON({ type: 'Feature', geometry: geom, properties: {} }, {
+
+      const layer = L.geoJSON({ type: 'Feature', geometry: geom, properties: {} }, {
         style: { color: '#58a6ff', weight: 1.5, opacity: 0.7, fillOpacity: 0.08, fillColor: '#58a6ff' },
       }).bindPopup(`<strong>${row.label || '—'}</strong>`)
         .addTo(mapInstance);
+
+      // Label at bottom-right of cell
+      if (row.label) {
+        const b = layer.getBounds();
+        const center = b.getCenter();
+        L.marker([center.lat, center.lng], {
+          icon: L.divIcon({
+            className: '',
+            html: `<div style="font-size:10px;font-weight:700;white-space:nowrap;">${row.label}</div>`,
+            iconSize:   [80, 16],
+            iconAnchor: [25, 16],
+          }),
+          interactive: false,
+          zIndexOffset: -100,
+        }).addTo(mapInstance);  
+      }
     });
   }
 }

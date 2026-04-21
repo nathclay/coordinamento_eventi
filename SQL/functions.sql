@@ -729,15 +729,56 @@ AS $$
   LIMIT 1;
 $$;
 
+-- ================================================================
+-- 9. get_nearest_route_marker
+-- ================================================================
+-- Returns the single closest km marker to a given coordinate.
+-- Used by mobile map to display "Sei vicino al km X".
+-- ================================================================
+
+CREATE OR REPLACE FUNCTION get_nearest_route_marker(
+  p_event_id UUID,
+  p_lng      FLOAT,
+  p_lat      FLOAT
+)
+RETURNS TABLE (
+  marker_id  UUID,
+  km         FLOAT,
+  label      TEXT,
+  distance_m FLOAT
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT
+    id,
+    km,
+    label,
+    ST_Distance(
+      geom::geography,
+      ST_MakePoint(p_lng, p_lat)::geography
+    ) AS distance_m
+  FROM markers_route
+  WHERE event_id = p_event_id
+    AND geom IS NOT NULL
+  ORDER BY distance_m ASC
+  LIMIT 1;
+$$;
+
+
 
 -- ================================================================
 -- GRANT EXECUTE to authenticated role (Supabase default)
 -- ================================================================
-GRANT EXECUTE ON FUNCTION get_nearest_free_resources  TO authenticated;
-GRANT EXECUTE ON FUNCTION get_incident_route_position  TO authenticated;
-GRANT EXECUTE ON FUNCTION get_resources_in_zone        TO authenticated;
-GRANT EXECUTE ON FUNCTION get_zone_summary             TO authenticated;
-GRANT EXECUTE ON FUNCTION get_route_incidents_by_km    TO authenticated;
-GRANT EXECUTE ON FUNCTION get_nearest_poi              TO authenticated;
-GRANT EXECUTE ON FUNCTION get_resource_trail           TO authenticated;
-GRANT EXECUTE ON FUNCTION get_zone_for_point TO authenticated;
+GRANT EXECUTE ON FUNCTION get_nearest_free_resources    TO authenticated;
+GRANT EXECUTE ON FUNCTION get_incident_route_position   TO authenticated;
+GRANT EXECUTE ON FUNCTION get_resources_in_zone         TO authenticated;
+GRANT EXECUTE ON FUNCTION get_zone_summary              TO authenticated;
+GRANT EXECUTE ON FUNCTION get_route_incidents_by_km     TO authenticated;
+GRANT EXECUTE ON FUNCTION get_nearest_poi               TO authenticated;
+GRANT EXECUTE ON FUNCTION get_resource_trail            TO authenticated;
+GRANT EXECUTE ON FUNCTION get_zone_for_point            TO authenticated;
+GRANT EXECUTE ON FUNCTION get_nearest_route_marker      TO authenticated;
+
