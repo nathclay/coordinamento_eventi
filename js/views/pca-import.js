@@ -1,10 +1,25 @@
 /* ================================================================
    js/views/pca-import.js  —  CSV bulk import
-   Personnel import: used in dispositivo page
-   Resources import: used in impostazioni page
+   Two independent import flows sharing one modal:
+     - Personnel: resolves resource names to IDs, upserts on CF.
+     - Resources: two-pass insert (resources first, coordinators
+       second) to resolve forward references.
+
+   Called from pca-dispositivo.js (personnel + resources buttons).
+   Depends on: supabase.js (db), pca.js (PCA, showToast)
 ================================================================ */
 
-/* ── PERSONNEL IMPORT ──────────────────────────────────────── */
+/* ================================================================
+   PERSONNEL IMPORT
+   openPersonnelImportModal — builds modal body with format guide,
+                              drop zone and preview area.
+   handlePersonnelCSV       — parses CSV, resolves resource names
+                              to IDs, validates required columns,
+                              renders preview table.
+   resetPersonnelImport     — resets drop zone and clears state.
+   confirmPersonnelImport   — upserts personnel rows in batches,
+                              matching on CF for deduplication.
+================================================================ */
 function openPersonnelImportModal() {
   document.getElementById('import-modal-title').textContent = 'Importa Personale';
   document.getElementById('import-modal-body').innerHTML = `
@@ -257,7 +272,17 @@ async function confirmPersonnelImport() {
   }
 }
 
-/* ── RESOURCES IMPORT ──────────────────────────────────────── */
+/* ================================================================
+   RESOURCES IMPORT
+   openResourcesImportModal — builds modal body for resource import.
+   handleResourcesCSV       — parses CSV, validates type enum,
+                              resolves radio channel names to IDs,
+                              renders preview table.
+   resetResourcesImport     — resets drop zone and clears state.
+   confirmResourcesImport   — two-pass import: first inserts all
+                              resources, then assigns coordinators
+                              once all IDs are known.
+================================================================ */
 function openResourcesImportModal() {
   document.getElementById('import-modal-title').textContent = 'Importa Risorse';
   document.getElementById('import-modal-body').innerHTML = `
@@ -547,7 +572,13 @@ async function confirmResourcesImport() {
   }
 }
 
-/* ── CSV PARSER ────────────────────────────────────────────── */
+/* ================================================================
+   CSV PARSER & HELPERS
+   parseCSV             — splits CSV text into headers + row arrays.
+   cell                 — safely reads a cell by column name.
+   parseItalianDateTime — parses DD/MM/YYYY HH:MM → ISO string.
+   formatDateTime       — formats ISO string for preview display.
+================================================================ */
 function parseCSV(text) {
   // Normalize line endings
   const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')

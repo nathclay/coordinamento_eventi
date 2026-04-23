@@ -1,11 +1,19 @@
 /* ================================================================
-   pca.js  —  Posto di Comando Avanzato
-   Depends on: supabase.js, state.js, ui.js, auth.js
+   js/views/pca.js  —  Posto di Comando Avanzato
+   Main dashboard view: map, incident panels, resource panels,
+   all modals, geo layers, realtime subscription.
+
+   Depends on: supabase.js, state.js, ui.js, pca-rpc.js,
+               router.js, Leaflet
+   Entry point: loadPCAView() called by auth.js after login.
 ================================================================ */
 
 /* ── OWN STATE ─────────────────── */
 let _geoLayerDefs = [];
 let _geoLayerData = {};
+let _incidentRefreshTimer = null;
+let _resourceRefreshTimer = null;
+let _dispositivoRefreshTimer = null;
 
 const PCA = {
   map:          null,
@@ -24,7 +32,15 @@ const PCA = {
   _baseTile:    null,
 };
 
-/* ── LAUNCH DASHBOARD ──────────────────────────────────────── */
+/* ================================================================
+   INIT
+   loadPCAView      — entry point called by auth.js after login.
+                      Wires all buttons, starts clocks, initialises
+                      map, loads data, starts Realtime.
+   startClocks      — ticks the wall clock and race elapsed timer.
+   subscribePCA     — single Realtime channel for incidents,
+                      responses and resource status.
+================================================================ */
 async function loadPCAView() {
   const resource = STATE.resource;
   const event    = STATE.event;   // auth.js already fetched it
@@ -85,7 +101,6 @@ async function loadPCAView() {
   subscribePCA();
 }
  
-/* ── CLOCKS ────────────────────────────────────────────────── */
 function startClocks(startTime) {
   function tick() {
     const now = new Date();
@@ -108,8 +123,88 @@ function startClocks(startTime) {
   tick();
   setInterval(tick, 15000);
 }
- 
-/* ── MAP ───────────────────────────────────────────────────── */
+
+function subscribePCA() {
+  if (!PCA.eventId) return;
+  db.channel(`pca-${PCA.eventId}`)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents',
+      filter: `event_id=eq.${PCA.eventId}` }, () => scheduleIncidentRefresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'incident_responses',
+      filter: `event_id=eq.${PCA.eventId}` }, () => scheduleIncidentRefresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'resources_current_status',
+      filter: `event_id=eq.${PCA.eventId}` }, () => scheduleResourceRefresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'personnel',
+      filter: `event_id=eq.${PCA.eventId}` }, () => scheduleDispositivoRefresh())
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'resources',
+      filter: `event_id=eq.${PCA.eventId}` }, () => scheduleDispositivoRefresh())
+    .subscribe();
+}
+
+function scheduleIncidentRefresh() {
+  clearTimeout(_incidentRefreshTimer);
+  _incidentRefreshTimer = setTimeout(() => onIncidentChange(), 300);
+}
+
+function scheduleResourceRefresh() {
+  clearTimeout(_resourceRefreshTimer);
+  _resourceRefreshTimer = setTimeout(() => onResourceChange(), 300);
+}
+
+function scheduleDispositivoRefresh() {
+  clearTimeout(_dispositivoRefreshTimer);
+  _dispositivoRefreshTimer = setTimeout(() => onDispositivoChange(), 300);
+}
+
+async function onIncidentChange() {
+  const data = await fetchPCAIncidents(PCA.eventId);
+  PCA.allIncidents = data.filter(i => !isPMAOnly(i));
+
+  if (document.getElementById('list-active-incidents')) {
+    renderIncidentPanels();
+    updateHeaderStats();
+    PCA.allIncidents.forEach(i => {
+      if (i.geom && i.status !== 'in_progress_in_pma') updateIncidentMarker(i);
+    });
+  }
+  if (document.getElementById('soccorsi-body'))  renderSoccorsiTables();
+  if (document.getElementById('pma-tabs'))        refreshPCAView();
+  if (document.getElementById('hospital-body'))   renderOspedalizzazioni();
+}
+
+async function onResourceChange() {
+  const data = await fetchPCAResources(PCA.eventId);
+  PCA.allResources = data;
+
+  if (document.getElementById('list-all-resources')) {
+    const pmas   = PCA.allResources.filter(r => r.resource_type === 'PMA');
+    const others = PCA.allResources.filter(r => !['PMA','PCA','LDC'].includes(r.resource_type));
+    renderPMAList(pmas);
+    renderResourceList('list-all-resources', others);
+    document.getElementById('badge-resources-count').textContent = others.length;
+    PCA.allResources.forEach(r => {
+      const rcs = r.resources_current_status;
+      if (rcs?.geom) updateResourceMarker(r, rcs.status || 'free', rcs.geom);
+    });
+  }
+  if (document.getElementById('moduli-body'))   renderModuliTables();
+  if (document.getElementById('soccorsi-body')) renderSoccorsiTables();
+}
+
+async function onDispositivoChange() {
+  if (document.getElementById('disp-body')) await renderDispositivo();
+}
+
+/* ================================================================
+   MAP — SETUP
+   initPCAMap          — creates the Leaflet instance and base layers.
+   loadGeoLayers       — fetches all geo tables (route, grid, fixed,
+                         markers, poi) and builds toggle buttons.
+   buildGeoLayer       — renders a single geo table as a LayerGroup.
+   toggleGeoLayer      — shows/hides a geo layer by key.
+   switchBasemap       — swaps between voyager and satellite tiles.
+   toggleMapLayer      — shows/hides resource/incident layers.
+   toggleMapPanel      — collapses/expands the map control panel.
+================================================================ */
 async function initPCAMap(event) {
   const lat  = event?.center_lat  || 41.9;
   const lng  = event?.center_lng  || 12.5;
@@ -144,10 +239,7 @@ async function loadGeoLayers() {
   let anyVisible   = false;
 
   for (const def of tables) {
-    const { data } = await db
-      .from(def.table)
-      .select('*')
-      .eq('event_id', PCA.eventId);
+    const data = await fetchGeoLayer(PCA.eventId, def.table);
 
     if (!data || data.length === 0) continue;
     anyVisible = true;
@@ -301,97 +393,6 @@ function switchBasemap(style) {
   PCA._baseTile.bringToBack();
 }
 
-function resourceIcon(resource, status) {
-  const colors = { free: '#3fb950', busy: '#f0883e', stopped: '#484f58' };
-  const color  = colors[status] || colors.free;
-  const label = resource.resource_type === 'LDC'
-    ? 'LDC ' + (resource.resource || '').replace(/[^0-9]/g, '')
-    : (resource.resource || resource.resource_type || '?').substring(0, 8);  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="38" height="42" viewBox="0 0 38 42">
-      <rect x="1" y="1" width="36" height="30" rx="6" fill="#161b22" stroke="${color}" stroke-width="2"/>
-      <text x="19" y="20" text-anchor="middle" dominant-baseline="middle"
-        font-family="system-ui,sans-serif" font-size="9" font-weight="700" fill="${color}">${label}</text>
-      <polygon points="14,31 24,31 19,40" fill="${color}"/>
-    </svg>`;
-  return L.divIcon({ html: svg, className: '', iconSize: [38, 42], iconAnchor: [19, 40], popupAnchor: [0, -42] });
-}
- 
-function incidentIcon(triage) {
-  const colors = { red: '#e24b4a', yellow: '#d29922', green: '#3fb950', white: '#cccccc' };
-  const color  = colors[triage] || '#8b949e';
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
-      <circle cx="11" cy="11" r="9" fill="${color}" stroke="#0d1117" stroke-width="2"/>
-      <text x="11" y="15" text-anchor="middle" font-family="system-ui" font-size="11" fill="#0d1117" font-weight="700">!</text>
-    </svg>`;
-  return L.divIcon({ html: svg, className: '', iconSize: [22, 22], iconAnchor: [11, 11], popupAnchor: [0, -14] });
-}
- 
-function updateResourceMarker(resource, status, geom) {
-  if (!PCA.map || !geom) return;
-  const [lng, lat] = geom.coordinates;
-  const layer = resource.resource_type === 'LDC'
-    ? PCA.layers.coordinatori
-    : PCA.layers.risorse;
-
-  const fullResource = PCA.allResources.find(r => r.id === resource.id);
-  const lastPos = formatTime(fullResource?.resources_current_status?.location_updated_at);
-  const popup = `
-    <strong style="font-size:13px;">${resource.resource}</strong><br>
-    <span style="font-size:11px;color:#8b949e;">
-      Ultima pos: ${lastPos}
-    </span>
-    <button onclick="openResourceDetailModal('${resource.id}')" class="map-popup-btn">
-      Dettagli →
-    </button>`;
-  if (PCA.markers[resource.id]) {
-    PCA.markers[resource.id].setLatLng([lat, lng]);
-    PCA.markers[resource.id].setIcon(resourceIcon(resource, status));
-    PCA.markers[resource.id].getPopup().setContent(popup);
-  } else {
-    const marker = L.marker([lat, lng], { icon: resourceIcon(resource, status) })
-      .addTo(layer)
-      .bindPopup(popup);
-    PCA.markers[resource.id] = marker;
-  }
-}
-
-function updateIncidentMarker(incident) {
-  if (!PCA.map || !incident.geom) return;
-  const [lng, lat] = incident.geom.coordinates;
-
-  const isActive = ['open','in_progress'].includes(incident.status);
-  const targetLayer = isActive ? PCA.layers.attivi : PCA.layers.chiusi;
-  const resource = incident.incident_responses?.map(r => r.resources?.resource).filter(Boolean).join(', ') || '—';
-  const triage   = incident.current_triage || 'null';
-  const triageLabels = { red: 'Rosso', yellow: 'Giallo', green: 'Verde', white: 'Bianco' };
-  const triageText = triageLabels[incident.current_triage] || 'ND';
-  const popup = `
-    <strong style="font-size:13px;">Intervento</strong><br>
-    <span style="font-size:11px;color:#8b949e;">Risorsa: ${resource}</span><br>
-    <span style="font-size:11px;color:#8b949e;">Codice: ${triageText}</span><br>
-    <span style="font-size:11px;color:#8b949e;">Ore ${formatTime(incident.created_at)}</span>
-    <button onclick="openIncidentDetailModal('${incident.id}')" class="map-popup-btn">Dettagli →</button>`;
-
-  if (PCA.incMarkers[incident.id]) {
-    const marker = PCA.incMarkers[incident.id];
-    // Move to correct layer if needed — safely check both layers
-    [PCA.layers.attivi, PCA.layers.chiusi].forEach(l => {
-      if (l && l.hasLayer(marker)) l.removeLayer(marker);
-    });
-    if (targetLayer) targetLayer.addLayer(marker);
-    marker.setLatLng([lat, lng]);
-    marker.setIcon(incidentIcon(incident.current_triage));
-    marker.getPopup().setContent(popup);
-  } else {
-    if (!targetLayer) return;
-    const marker = L.marker([lat, lng], { icon: incidentIcon(incident.current_triage) })
-      .addTo(targetLayer)
-      .bindPopup(popup);
-    PCA.incMarkers[incident.id] = marker;
-  }
-}
- 
 function toggleMapLayer(layerName, btn) {
   if (layerName === 'base') return;
   const layer = PCA.layers[layerName];
@@ -407,7 +408,6 @@ function toggleMapLayer(layerName, btn) {
   }
 }
 
-/* ── MAP PANEL COLLAPSE ─────────────────────────────────────── */
 function toggleMapPanel() {
   const body    = document.getElementById('map-ctrl-body');
   const chevron = document.getElementById('map-ctrl-chevron');
@@ -416,7 +416,64 @@ function toggleMapPanel() {
   chevron.textContent = open ? '▸' : '▾';
 }
 
-/* ── GEO LAYER STYLES ───────────────────────────────────────── */
+/* ================================================================
+   MAP — CONTROLS
+   filterFreeUnits       — toggles "show only free units" filter.
+   flyToRecentPositions  — toggles "show only recently seen" filter.
+   applyMapFilter        — applies active filters to resource markers.
+   focusMapSearch        — prompt-based resource search, flies to marker.
+================================================================ */
+function filterFreeUnits() {
+  PCA.activeFilters.has('free') ? PCA.activeFilters.delete('free') : PCA.activeFilters.add('free');
+  document.getElementById('btn-free-units').classList.toggle('active', PCA.activeFilters.has('free'));
+  applyMapFilter();
+}
+
+function flyToRecentPositions() {
+  PCA.activeFilters.has('recent') ? PCA.activeFilters.delete('recent') : PCA.activeFilters.add('recent');
+  document.getElementById('btn-recent-pos').classList.toggle('active', PCA.activeFilters.has('recent'));
+  applyMapFilter();
+}
+
+function applyMapFilter() {
+  const cutoff = Date.now() - 15 * 60 * 1000;
+  PCA.allResources.forEach(r => {
+    const marker = PCA.markers[r.id];
+    if (!marker) return;
+    const rcs = r.resources_current_status;
+    let visible = true;
+    if (PCA.activeFilters.has('free') && rcs?.status !== 'free') visible = false;
+    if (PCA.activeFilters.has('recent')) {
+      const t = rcs?.location_updated_at;
+      if (!t || new Date(t).getTime() <= cutoff) visible = false;
+    }
+    const layer = r.resource_type === 'LDC' ? PCA.layers.coordinatori : PCA.layers.risorse;
+    if (visible) {
+      if (!layer.hasLayer(marker)) layer.addLayer(marker);
+    } else {
+      if (layer.hasLayer(marker)) layer.removeLayer(marker);
+    }
+  });
+}
+ 
+function focusMapSearch() {
+  const q = prompt('Cerca risorsa:');
+  if (!q) return;
+  const r = PCA.allResources.find(res => res.resource.toLowerCase().includes(q.toLowerCase()));
+  if (r?.resources_current_status?.geom) {
+    const [lng, lat] = r.resources_current_status.geom.coordinates;
+    PCA.map.setView([lat, lng], 16);
+  } else {
+    showToast('Non trovato', 'error');
+  }
+}
+
+/* ================================================================
+   MAP — GEO LAYER STYLES
+   GEO_STYLES        — default style config per layer key.
+   openGeoStyleModal — opens the style editor for a given layer.
+   applyGeoStyle     — reads modal inputs, rebuilds layer with new style.
+================================================================ */
 const GEO_STYLES = {
   route:   { color: '#f0883e', weight: 3,    opacity: 0.8, fillOpacity: 0 },
   grid:    { color: '#58a6ff', weight: 1.5,  opacity: 0.7, fillOpacity: 0.08 },
@@ -525,37 +582,135 @@ function applyGeoStyle(key) {
 
   closeModal('modal-geo-style');
 }
+
+/* ================================================================
+   MAP — MARKERS & ICONS
+   resourceIcon         — SVG divIcon for a resource, coloured by status.
+   incidentIcon         — SVG divIcon for an incident, coloured by triage.
+   updateResourceMarker — creates or updates a resource marker on the map.
+   updateIncidentMarker — creates or updates an incident marker, moving
+                          it between active/closed layers as status changes.
+================================================================ */
+function resourceIcon(resource, status) {
+  const colors = { free: '#3fb950', busy: '#f0883e', stopped: '#484f58' };
+  const color  = colors[status] || colors.free;
+  const label = resource.resource_type === 'LDC'
+    ? 'LDC ' + (resource.resource || '').replace(/[^0-9]/g, '')
+    : (resource.resource || resource.resource_type || '?').substring(0, 8);  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="38" height="42" viewBox="0 0 38 42">
+      <rect x="1" y="1" width="36" height="30" rx="6" fill="#161b22" stroke="${color}" stroke-width="2"/>
+      <text x="19" y="20" text-anchor="middle" dominant-baseline="middle"
+        font-family="system-ui,sans-serif" font-size="9" font-weight="700" fill="${color}">${label}</text>
+      <polygon points="14,31 24,31 19,40" fill="${color}"/>
+    </svg>`;
+  return L.divIcon({ html: svg, className: '', iconSize: [38, 42], iconAnchor: [19, 40], popupAnchor: [0, -42] });
+}
  
-/* ── INCIDENTS ─────────────────────────────────────────────── */
+function incidentIcon(triage) {
+  const colors = { red: '#e24b4a', yellow: '#d29922', green: '#3fb950', white: '#cccccc' };
+  const color  = colors[triage] || '#8b949e';
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
+      <circle cx="11" cy="11" r="9" fill="${color}" stroke="#0d1117" stroke-width="2"/>
+      <text x="11" y="15" text-anchor="middle" font-family="system-ui" font-size="11" fill="#0d1117" font-weight="700">!</text>
+    </svg>`;
+  return L.divIcon({ html: svg, className: '', iconSize: [22, 22], iconAnchor: [11, 11], popupAnchor: [0, -14] });
+}
+ 
+function updateResourceMarker(resource, status, geom) {
+  if (!PCA.map || !geom) return;
+  const [lng, lat] = geom.coordinates;
+  const layer = resource.resource_type === 'LDC'
+    ? PCA.layers.coordinatori
+    : PCA.layers.risorse;
+
+  const fullResource = PCA.allResources.find(r => r.id === resource.id);
+  const lastPos = formatTime(fullResource?.resources_current_status?.location_updated_at);
+  const popup = `
+    <strong style="font-size:13px;">${resource.resource}</strong><br>
+    <span style="font-size:11px;color:#8b949e;">
+      Ultima pos: ${lastPos}
+    </span>
+    <button onclick="openResourceDetailModal('${resource.id}')" class="map-popup-btn">
+      Dettagli →
+    </button>`;
+  if (PCA.markers[resource.id]) {
+    PCA.markers[resource.id].setLatLng([lat, lng]);
+    PCA.markers[resource.id].setIcon(resourceIcon(resource, status));
+    PCA.markers[resource.id].getPopup().setContent(popup);
+  } else {
+    const marker = L.marker([lat, lng], { icon: resourceIcon(resource, status) })
+      .addTo(layer)
+      .bindPopup(popup);
+    PCA.markers[resource.id] = marker;
+  }
+}
+
+function updateIncidentMarker(incident) {
+  if (!PCA.map || !incident.geom) return;
+  const [lng, lat] = incident.geom.coordinates;
+
+  const isActive = ['open','in_progress'].includes(incident.status);
+  const targetLayer = isActive ? PCA.layers.attivi : PCA.layers.chiusi;
+  const resource = incident.incident_responses?.map(r => r.resources?.resource).filter(Boolean).join(', ') || '—';
+  const triage   = incident.current_triage || 'null';
+  const triageLabels = { red: 'Rosso', yellow: 'Giallo', green: 'Verde', white: 'Bianco' };
+  const triageText = triageLabels[incident.current_triage] || 'ND';
+  const popup = `
+    <strong style="font-size:13px;">Intervento</strong><br>
+    <span style="font-size:11px;color:#8b949e;">Risorsa: ${resource}</span><br>
+    <span style="font-size:11px;color:#8b949e;">Codice: ${triageText}</span><br>
+    <span style="font-size:11px;color:#8b949e;">Ore ${formatTime(incident.created_at)}</span>
+    <button onclick="openIncidentDetailModal('${incident.id}')" class="map-popup-btn">Dettagli →</button>`;
+
+  if (PCA.incMarkers[incident.id]) {
+    const marker = PCA.incMarkers[incident.id];
+    // Move to correct layer if needed — safely check both layers
+    [PCA.layers.attivi, PCA.layers.chiusi].forEach(l => {
+      if (l && l.hasLayer(marker)) l.removeLayer(marker);
+    });
+    if (targetLayer) targetLayer.addLayer(marker);
+    marker.setLatLng([lat, lng]);
+    marker.setIcon(incidentIcon(incident.current_triage));
+    marker.getPopup().setContent(popup);
+  } else {
+    if (!targetLayer) return;
+    const marker = L.marker([lat, lng], { icon: incidentIcon(incident.current_triage) })
+      .addTo(targetLayer)
+      .bindPopup(popup);
+    PCA.incMarkers[incident.id] = marker;
+  }
+}
+ 
+/* ================================================================
+   INCIDENTS — DATA
+   isPMAOnly            — returns true if all responses are PMA type
+                          (used to filter walk-ins from the main list).
+   loadAllIncidents     — fetches all non-cancelled incidents, updates
+                          PCA.allIncidents, redraws panels and markers.
+   renderIncidentPanels — splits incidents into active/closed and
+                          renders both lists in the left panel.
+   renderIncidentList   — renders a single list of incident cards.
+   selectIncident       — flies to the incident marker if visible,
+                          otherwise opens the detail modal.
+   updateHeaderStats    — updates the triage count badges in the header.
+================================================================ */
+function isPMAOnly(incident) {
+  const responses = incident.incident_responses || [];
+  if (responses.length === 0) return false;
+  return responses.every(r => r.resources?.resource_type === 'PMA');
+}
+
 async function loadAllIncidents() {
   if (!document.getElementById('list-active-incidents')) return;
-  const { data, error } = await db
-    .from('incidents')
-    .select(`
-      id, incident_type, status, current_triage,
-      patient_name, patient_identifier, patient_age, created_at, updated_at, geom, description,
-      incident_responses(
-        id, outcome, resource_id,
-        resources!incident_responses_resource_id_fkey(resource, resource_type)
-      )
-    `)
-    .eq('event_id', PCA.eventId)
-    .not('status', 'in', '("cancelled")')
-    .order('updated_at', { ascending: false });
- 
-  if (error) { console.error(error); return; }
-  PCA.allIncidents = data || [];
-  PCA.allIncidents = (data || []).filter(i => !isPMAOnly(i));
+    const data = await fetchPCAIncidents(PCA.eventId);
+    PCA.allIncidents = data.filter(i => !isPMAOnly(i));
  
   renderIncidentPanels();
   updateHeaderStats();
   PCA.allIncidents.forEach(i => { 
     if (i.geom && i.status !== 'in_progress_in_pma') updateIncidentMarker(i); 
   });
-  // Refresh PMA page if active
-  if (document.getElementById('pma-tabs')) refreshPCAView();
-  if (document.getElementById('soccorsi-body')) renderSoccorsiTables();
-  if (document.getElementById('moduli-body'))   renderModuliTables();
 }
  
 function renderIncidentPanels() {
@@ -616,101 +771,6 @@ function selectIncident(incidentId) {
   }
 }
 
-function isPMAOnly(incident) {
-  const responses = incident.incident_responses || [];
-  if (responses.length === 0) return false;
-  return responses.every(r => r.resources?.resource_type === 'PMA');
-}
-/* ── RESOURCES ─────────────────────────────────────────────── */
-async function loadAllResources() {
-  if (!document.getElementById('list-all-resources')) return;
-  const { data, error } = await db
-    .from('resources')
-    .select(`
-      id, resource, resource_type, notes,
-      resources_current_status(status, active_responses, geom, location_updated_at, last_response_at)
-    `)
-    .eq('event_id', PCA.eventId)
-    .order('resource');
- 
-  if (error) { console.error(error); return; }
-  PCA.allResources = data || [];
- 
-  const pmas   = PCA.allResources.filter(r => r.resource_type === 'PMA');
-  const others = PCA.allResources.filter(r => !['PMA', 'PCA', 'LDC'].includes(r.resource_type)); 
-  
-  renderPMAList(pmas);
-  renderResourceList('list-all-resources', others);
-  document.getElementById('badge-resources-count').textContent = others.length;
-  PCA.allResources.forEach(r => {
-    const rcs = r.resources_current_status;
-    if (rcs?.geom) updateResourceMarker(r, rcs.status || 'free', rcs.geom);
-  });
-  if (document.getElementById('pma-tabs')) refreshPCAView();
-  if (document.getElementById('soccorsi-body')) renderSoccorsiTables();
-  if (document.getElementById('moduli-body'))   renderModuliTables();
-
-}
- 
-function renderPMAList(pmas) {
-  const el = document.getElementById('list-pma-resources');
-  if (!el) return;
-  if (pmas.length === 0) { el.innerHTML = '<div class="empty-state">Nessun PMA</div>'; return; }
-  el.innerHTML = pmas.map(r => {
-    const rcs    = r.resources_current_status;
-    const status = rcs?.status || 'free';
-    return `
-      <div class="resource-card pma-card" onclick="openResourceDetailModal('${r.id}')">
-        <div class="rc-body">
-          <div class="rc-name">${r.resource}</div>
-          <div class="rc-detail">Pazienti in trattamento: <strong>${rcs?.active_responses || 0}</strong></div>
-        </div>
-      </div>`;
-  }).join('');
-}
- 
-function renderResourceList(containerId, resources) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
-  if (PCA.activeFilters === 'free') {
-    resources = resources.filter(r => r.resources_current_status?.status === 'free');
-  } else if (PCA.activeFilters === 'recent') {
-    const cutoff = Date.now() - 15 * 60 * 1000;
-    resources = resources.filter(r => {
-      const t = r.resources_current_status?.location_updated_at;
-      return t && new Date(t).getTime() > cutoff;
-    });
-  }
-  if (resources.length === 0) { el.innerHTML = '<div class="empty-state">Nessuna risorsa</div>'; return; }
-  el.innerHTML = resources.map(r => {
-    const rcs    = r.resources_current_status;
-    const status = rcs?.status || 'free';
-    const active = rcs?.active_responses || 0;
-    return `
-      <div class="resource-card" onclick="selectResource('${r.id}')">
-        <div class="rc-status-bar ${status}"></div>
-        <div class="rc-body">
-          <div class="rc-name">${r.resource}</div>
-          <div class="rc-detail">Last Pos: ${formatTime(rcs?.location_updated_at)} · Last Int: ${formatTime(rcs?.last_response_at)}</div>
-        </div>
-        <div class="rc-right">
-          <span class="rc-status-badge ${status}">${statusItalian(status)}</span>
-          ${active > 0 ? `<span class="rc-count">${active} att.</span>` : ''}
-        </div>
-      </div>`;
-  }).join('');
-}
- 
-function selectResource(resourceId) {
-  const marker = PCA.markers[resourceId];
-  if (marker && PCA.map) {
-    PCA.map.setView(marker.getLatLng(), 17);
-    marker.openPopup();
-  } else {
-    openResourceDetailModal(resourceId);
-  }
-}
-/* ── HEADER STATS ──────────────────────────────────────────── */
 function updateHeaderStats() {
   const active = PCA.allIncidents.filter(i =>
     ['open', 'in_progress'].includes(i.status)
@@ -736,10 +796,23 @@ function updateHeaderStats() {
     .reduce((sum, r) => sum + (r.resources_current_status?.active_responses || 0), 0);
   document.getElementById('val-pma').textContent = pmaActive;
 }
- 
-/* ── UNIFIED INCIDENT DETAIL MODAL ────────────────────────── */
 
-/* ── ASSESSMENT BUILDER ────────────────────────────────────── */
+/* ================================================================
+   INCIDENTS — DETAIL MODAL
+   buildAssessment       — builds the HTML block for a single
+                           patient assessment entry.
+   openIncidentDetailModal — fetches full incident data and renders
+                             the detail modal (patient, assessment
+                             history, response chain, action buttons).
+   showOutcomeConfirm    — shows inline confirm UI when operator
+                           selects a new outcome from the dropdown.
+   cancelOutcomeChange   — dismisses inline confirm, resets select.
+   confirmOutcomeChange  — commits the outcome change via rpc.
+   openAddResourceModal  — populates and opens the add-resource modal.
+   confirmAddResource    — inserts a new incident_response row.
+   openCloseIncidentModal — opens the close-incident confirmation modal.
+   confirmCloseIncident  — bulk-closes all active responses on incident.
+================================================================ */
 function buildAssessment(inc, a) {
   const triageLabels = { red: 'Rosso', yellow: 'Giallo', green: 'Verde', white: 'Bianco' };
   const yn = v => v === true
@@ -782,26 +855,8 @@ function buildAssessment(inc, a) {
 }
 
 async function openIncidentDetailModal(incidentId) {
-  const { data: inc, error } = await db
-    .from('incidents')
-    .select(`
-      *,
-      incident_responses(
-        id, role, outcome, assigned_at, released_at, notes, hospital_info,
-        resources!incident_responses_resource_id_fkey(id, resource, resource_type)
-      ),
-      patient_assessments(
-        id, assessed_at, response_id, triage,
-        conscious, respiration, circulation, walking, minor_injuries,
-        heart_rate, spo2, breathing_rate, blood_pressure, temperature, gcs_total, iv_access, bed_number_pma,
-        description, clinical_notes,
-        personnel:assessed_by(name, surname)
-      )
-    `)
-    .eq('id', incidentId)
-    .single();
-
-  if (error || !inc) return;
+  const inc = await fetchIncidentDetail(incidentId);
+  if (!inc) return;
 
   const isActive = ['open', 'in_progress'].includes(inc.status);
   const triageLabels = { red: 'Rosso', yellow: 'Giallo', green: 'Verde', white: 'Bianco' };
@@ -924,8 +979,6 @@ async function openIncidentDetailModal(incidentId) {
   openModal('modal-incident');
 }
 
-/* ── OUTCOME CHANGE WITH INLINE CONFIRM ────────────────────── */
-// Store pending outcome per response id
 const _pendingOutcome = {};
 
 function showOutcomeConfirm(responseId, outcome, incidentId, selectEl) {
@@ -950,20 +1003,11 @@ async function confirmOutcomeChange(responseId, incidentId) {
   const pending = _pendingOutcome[responseId];
   if (!pending) return;
 
-  const updates = { outcome: pending.outcome };
-  if (!['en_route_to_incident','treating',
-        'en_route_to_pma','en_route_to_hospital'].includes(pending.outcome)) {
-    updates.released_at = new Date().toISOString();
-  }
-
-  const { error } = await db
-    .from('incident_responses')
-    .update(updates)
-    .eq('id', responseId);
+  const ok = await updateResponseOutcome(responseId, pending.outcome);
 
   delete _pendingOutcome[responseId];
 
-  if (error) { showToast('Errore aggiornamento esito', 'error'); return; }
+  if (!ok) { showToast('Errore aggiornamento esito', 'error'); return; }
   showToast('Esito aggiornato ✓', 'success');
 
   // Refresh modal in place + background data
@@ -972,7 +1016,6 @@ async function confirmOutcomeChange(responseId, incidentId) {
   loadAllResources();
 }
 
-/* ── ADD RESOURCE MODAL ────────────────────────────────────── */
 function openAddResourceModal(incidentId) {
   const select = document.getElementById('ni-add-resource');
   const nonPMA = PCA.allResources.filter(r => !['PMA','PCA'].includes(r.resource_type));
@@ -995,16 +1038,11 @@ async function confirmAddResource(incidentId) {
   errEl.textContent = '';
   if (!resourceId) { errEl.textContent = 'Seleziona una risorsa.'; return; }
 
-  const { error } = await db.from('incident_responses').insert({
-    event_id:    PCA.eventId,
-    incident_id: incidentId,
-    resource_id: resourceId,
-    outcome,
-    role:        'backup',
-    assigned_at: new Date().toISOString(),
+  const ok = await insertIncidentResponse({
+    eventId: PCA.eventId, incidentId, resourceId, outcome, role: 'backup',
   });
 
-  if (error) { errEl.textContent = error.message; return; }
+  if (!ok) { errEl.textContent = 'Errore durante l\'aggiunta.'; return; }
   showToast('Risorsa aggiunta ✓', 'success');
   closeModal('modal-add-resource');
   openIncidentDetailModal(incidentId);
@@ -1012,7 +1050,6 @@ async function confirmAddResource(incidentId) {
   loadAllResources();
 }
 
-/* ── CLOSE INCIDENT MODAL ──────────────────────────────────── */
 function openCloseIncidentModal(incidentId) {
   document.getElementById('ci-error').textContent = '';
   document.getElementById('ci-confirm').onclick = () => confirmCloseIncident(incidentId);
@@ -1024,14 +1061,9 @@ async function confirmCloseIncident(incidentId) {
   const errEl   = document.getElementById('ci-error');
   errEl.textContent = '';
 
-  const { error } = await db
-    .from('incident_responses')
-    .update({ outcome, released_at: new Date().toISOString() })
-    .eq('incident_id', incidentId)
-    .in('outcome', ['en_route_to_incident','treating',
-                    'en_route_to_pma','en_route_to_hospital', 'reporting']);
+  const ok = await closeIncidentResponses(incidentId, outcome);
+  if (!ok) { errEl.textContent = 'Errore durante la chiusura.'; return; }
 
-  if (error) { errEl.textContent = error.message; return; }
   showToast('Soccorso chiuso ✓', 'success');
   closeModal('modal-close-incident');
   closeModal('modal-incident');
@@ -1039,73 +1071,18 @@ async function confirmCloseIncident(incidentId) {
   loadAllResources();
 }
  
-/* ── RESOURCE DETAIL MODAL ─────────────────────────────────── */
-async function openResourceDetailModal(resourceId) {
-  const resource = PCA.allResources.find(r => r.id === resourceId);
-  if (!resource) return;
- 
-  const rcs    = resource.resources_current_status;
-  const status = rcs?.status || 'free';
- 
-  const { data: crew } = await db
-    .from('personnel')
-    .select('id, name, surname, role, number, comitato')
-    .eq('resource', resourceId)
-    .order('name');
- 
-  const crewRows = (crew || []).length === 0 
-    ? '<div class="empty-state">Nessun membro</div>'
-    : `<div style="display:grid;grid-template-columns:1fr 80px 100px 90px;gap:4px;
-        padding:4px 0;border-bottom:2px solid var(--border-bright);margin-bottom:2px;">
-        <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Nome</span>
-        <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Ruolo</span>
-        <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Comitato</span>
-        <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Telefono</span>
-      </div>` +
-    (crew || []).map(p => `
-      <div style="display:grid;grid-template-columns:1fr 80px 100px 90px;gap:4px;
-        padding:6px 0;border-bottom:1px solid var(--border);align-items:center;">
-        <span style="font-size:12px;font-weight:600;color:var(--text-primary);">${p.name} ${p.surname}</span>
-        <span style="font-size:11px;color:var(--text-secondary);text-transform:uppercase;">${p.role || '—'}</span>
-        <span style="font-size:11px;color:var(--text-secondary);">${p.comitato || '—'}</span>
-        ${p.number 
-          ? `<a href="tel:${p.number}" style="font-size:11px;color:var(--blue);text-decoration:none;">📞 ${p.number}</a>` 
-          : '<span style="font-size:11px;color:var(--text-muted);">—</span>'}
-      </div>`).join('');
-
-  const { data: incidents } = await db
-    .from('incident_responses')
-    .select('incident_id, outcome, assigned_at, incidents(incident_type, current_triage, status)')
-    .eq('resource_id', resourceId)
-    .order('assigned_at', { ascending: false });
-
-  document.getElementById('modal-resource-title').textContent = resource.resource;
-  document.getElementById('modal-resource-body').innerHTML = `
-    <div class="detail-row" style="margin-bottom:8px;"><span>Tipo</span><span>${resource.resource_type}</span></div>
-    <div class="detail-row" style="margin-bottom:8px;"><span>Stato</span>
-      <span><span class="rc-status-badge ${status}">${statusItalian(status)}</span></span></div>
-    <div class="detail-row" style="margin-bottom:8px;"><span>Interventi attivi</span><span>${rcs?.active_responses || 0}</span></div>
-    <div class="detail-row" style="margin-bottom:8px;"><span>Interventi totali</span><span>${incidents?.length || 0}</span></div>
-    <div class="detail-row" style="margin-bottom:12px;"><span>Ultima posizione</span><span>${formatTime(rcs?.location_updated_at)}</span></div>
-    ${resource.notes ? `<div style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;
-      padding:8px;background:var(--bg);border-radius:var(--radius);">${resource.notes}</div>` : ''}
-    <div class="detail-label">Equipaggio</div>
-    ${crewRows}`;
-  openModal('modal-resource');
-}
- 
-async function setResourceStatus(resourceId, status) {
-  const { error } = await db
-    .from('resources_current_status')
-    .update({ status })
-    .eq('resource_id', resourceId);
-  if (error) { showToast('Errore aggiornamento stato', 'error'); return; }
-  showToast(`Risorsa ${statusItalian(status)}`, 'success');
-  closeModal('modal-resource');
-  await loadAllResources();
-}
- 
-/* ── NEW INCIDENT MODAL ────────────────────────────────────── */
+/* ================================================================
+   INCIDENTS — NEW INCIDENT MODAL
+   NI_FORM / _ni* vars  — form state for the new incident modal.
+                          Reset on every open, never on individual
+                          input handlers.
+   openNewIncidentModal — resets state, builds modal body HTML,
+                          initialises mini Leaflet map for location pick.
+   niSetYN / niSetTriage / niAdjustAge / niSelectGender
+                        — input handlers that update NI_FORM state.
+   submitNewIncident    — validates, builds RPC params, calls
+                          createPCAIncident, refreshes data.
+================================================================ */
 const NI_FORM = {
   conscious: null, respiration: null, circulation: null,
   walking: null, minor_injuries: null, triage: null, iv_access: null
@@ -1117,7 +1094,6 @@ let _niLng    = null;
 let _niMap    = null;
 let _niMarker = null;
 
-/* ── OPEN */
 async function openNewIncidentModal() {
   // Reset state
   Object.assign(NI_FORM, {
@@ -1361,7 +1337,6 @@ async function openNewIncidentModal() {
   }, 50);
 }
 
-/* ── YN / TRIAGE / AGE / GENDER HELPERS  */
 function niSetYN(btn, field, value) {
   if (NI_FORM[field] === value) {
     NI_FORM[field] = null;
@@ -1394,7 +1369,6 @@ function niSelectGender(btn, gender) {
   });
 }
 
-/* ── SUBMIT  */
 async function submitNewIncident() {
   const btn   = document.getElementById('btn-submit-incident');
   const errEl = document.getElementById('ni-error');
@@ -1434,9 +1408,10 @@ async function submitNewIncident() {
   };
 
   try {
-    const { error } = await db.rpc('create_incident_with_assessment', params);
-    if (error) throw error;
+    const result = await createPCAIncident(params);
+    if (!result.ok) throw new Error(result.message);
     closeModal('modal-new-incident');
+
     // Destroy mini map
     if (_niMap) { _niMap.remove(); _niMap = null; }
     showToast('Intervento creato ✓', 'success');
@@ -1447,68 +1422,172 @@ async function submitNewIncident() {
     btn.disabled = false;
   }
 }
+
+/* ================================================================
+   RESOURCES — DATA
+   loadAllResources  — fetches all resources with current status,
+                       updates PCA.allResources, redraws panels
+                       and map markers.
+   renderPMAList     — renders the PMA section in the left panel.
+   renderResourceList — renders the operative resources list,
+                        applying any active map filters.
+   selectResource    — flies to resource marker if visible,
+                       otherwise opens the detail modal.
+================================================================ */
+async function loadAllResources() {
+  if (!document.getElementById('list-all-resources')) return;
+    const data = await fetchPCAResources(PCA.eventId);
+    PCA.allResources = data;
  
-/* ── MAP BUTTONS ───────────────────────────────────────────── */
-function filterFreeUnits() {
-  PCA.activeFilters.has('free') ? PCA.activeFilters.delete('free') : PCA.activeFilters.add('free');
-  document.getElementById('btn-free-units').classList.toggle('active', PCA.activeFilters.has('free'));
-  applyMapFilter();
-}
-
-
-function flyToRecentPositions() {
-  PCA.activeFilters.has('recent') ? PCA.activeFilters.delete('recent') : PCA.activeFilters.add('recent');
-  document.getElementById('btn-recent-pos').classList.toggle('active', PCA.activeFilters.has('recent'));
-  applyMapFilter();
-}
-
-function applyMapFilter() {
-  const cutoff = Date.now() - 15 * 60 * 1000;
+  const pmas   = PCA.allResources.filter(r => r.resource_type === 'PMA');
+  const others = PCA.allResources.filter(r => !['PMA', 'PCA', 'LDC'].includes(r.resource_type)); 
+  
+  renderPMAList(pmas);
+  renderResourceList('list-all-resources', others);
+  document.getElementById('badge-resources-count').textContent = others.length;
   PCA.allResources.forEach(r => {
-    const marker = PCA.markers[r.id];
-    if (!marker) return;
     const rcs = r.resources_current_status;
-    let visible = true;
-    if (PCA.activeFilters.has('free') && rcs?.status !== 'free') visible = false;
-    if (PCA.activeFilters.has('recent')) {
-      const t = rcs?.location_updated_at;
-      if (!t || new Date(t).getTime() <= cutoff) visible = false;
-    }
-    const layer = r.resource_type === 'LDC' ? PCA.layers.coordinatori : PCA.layers.risorse;
-    if (visible) {
-      if (!layer.hasLayer(marker)) layer.addLayer(marker);
-    } else {
-      if (layer.hasLayer(marker)) layer.removeLayer(marker);
-    }
+    if (rcs?.geom) updateResourceMarker(r, rcs.status || 'free', rcs.geom);
   });
 }
  
-function focusMapSearch() {
-  const q = prompt('Cerca risorsa:');
-  if (!q) return;
-  const r = PCA.allResources.find(res => res.resource.toLowerCase().includes(q.toLowerCase()));
-  if (r?.resources_current_status?.geom) {
-    const [lng, lat] = r.resources_current_status.geom.coordinates;
-    PCA.map.setView([lat, lng], 16);
+function renderPMAList(pmas) {
+  const el = document.getElementById('list-pma-resources');
+  if (!el) return;
+  if (pmas.length === 0) { el.innerHTML = '<div class="empty-state">Nessun PMA</div>'; return; }
+  el.innerHTML = pmas.map(r => {
+    const rcs    = r.resources_current_status;
+    const status = rcs?.status || 'free';
+    return `
+      <div class="resource-card pma-card" onclick="openResourceDetailModal('${r.id}')">
+        <div class="rc-body">
+          <div class="rc-name">${r.resource}</div>
+          <div class="rc-detail">Pazienti in trattamento: <strong>${rcs?.active_responses || 0}</strong></div>
+        </div>
+      </div>`;
+  }).join('');
+}
+ 
+function renderResourceList(containerId, resources) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (PCA.activeFilters.has('free')) {
+    resources = resources.filter(r => r.resources_current_status?.status === 'free');
+  } else if (PCA.activeFilters.has('recent')) {
+    const cutoff = Date.now() - 15 * 60 * 1000;
+    resources = resources.filter(r => {
+      const t = r.resources_current_status?.location_updated_at;
+      return t && new Date(t).getTime() > cutoff;
+    });
+  }
+  if (resources.length === 0) { el.innerHTML = '<div class="empty-state">Nessuna risorsa</div>'; return; }
+  el.innerHTML = resources.map(r => {
+    const rcs    = r.resources_current_status;
+    const status = rcs?.status || 'free';
+    const active = rcs?.active_responses || 0;
+    return `
+      <div class="resource-card" onclick="selectResource('${r.id}')">
+        <div class="rc-status-bar ${status}"></div>
+        <div class="rc-body">
+          <div class="rc-name">${r.resource}</div>
+          <div class="rc-detail">Last Pos: ${formatTime(rcs?.location_updated_at)} · Last Int: ${formatTime(rcs?.last_response_at)}</div>
+        </div>
+        <div class="rc-right">
+          <span class="rc-status-badge ${status}">${statusItalian(status)}</span>
+          ${active > 0 ? `<span class="rc-count">${active} att.</span>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+}
+ 
+function selectResource(resourceId) {
+  const marker = PCA.markers[resourceId];
+  if (marker && PCA.map) {
+    PCA.map.setView(marker.getLatLng(), 17);
+    marker.openPopup();
   } else {
-    showToast('Non trovato', 'error');
+    openResourceDetailModal(resourceId);
   }
 }
+
+/* ================================================================
+   RESOURCES — DETAIL MODAL
+   openResourceDetailModal — fetches crew and incident history,
+                             renders resource detail modal including
+                             current zone if event has a grid.
+   handleResourceStatus    — updates resource status via rpc,
+                             shows toast, closes modal, refreshes list.
+================================================================ */
+async function openResourceDetailModal(resourceId) {
+  const resource = PCA.allResources.find(r => r.id === resourceId);
+  if (!resource) return;
  
-/* ── REALTIME ──────────────────────────────────────────────── */
-function subscribePCA() {
-  if (!PCA.eventId) return;
-  db.channel(`pca-${PCA.eventId}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents',
-      filter: `event_id=eq.${PCA.eventId}` }, () => loadAllIncidents())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'incident_responses',
-      filter: `event_id=eq.${PCA.eventId}` }, () => loadAllIncidents())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'resources_current_status',
-      filter: `event_id=eq.${PCA.eventId}` }, () => loadAllResources())
-    .subscribe();
+  const rcs    = resource.resources_current_status;
+  const status = rcs?.status || 'free';
+ 
+  const [crew, history] = await Promise.all([
+    fetchResourceCrew(resourceId),
+    fetchResourceHistory(resourceId),
+  ]);
+
+  let zoneLabel = null;
+  if (PCA.event?.is_grid && rcs?.geom?.coordinates) {
+    const [lng, lat] = rcs.geom.coordinates;
+    zoneLabel = (await fetchZoneForPoint(PCA.eventId, lat, lng))?.grid_label ?? null;
+  }
+  
+  const crewRows = crew.length === 0
+    ? '<div class="empty-state">Nessun membro</div>'
+    : `<div style="display:grid;grid-template-columns:1fr 80px 100px 90px;gap:4px;
+        padding:4px 0;border-bottom:2px solid var(--border-bright);margin-bottom:2px;">
+        <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Nome</span>
+        <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Ruolo</span>
+        <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Comitato</span>
+        <span style="font-size:10px;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Telefono</span>
+      </div>` +
+    crew.map(p => `
+      <div style="display:grid;grid-template-columns:1fr 80px 100px 90px;gap:4px;
+        padding:6px 0;border-bottom:1px solid var(--border);align-items:center;">
+        <span style="font-size:12px;font-weight:600;color:var(--text-primary);">${p.name} ${p.surname}</span>
+        <span style="font-size:11px;color:var(--text-secondary);text-transform:uppercase;">${p.role || '—'}</span>
+        <span style="font-size:11px;color:var(--text-secondary);">${p.comitato || '—'}</span>
+        ${p.number 
+          ? `<a href="tel:${p.number}" style="font-size:11px;color:var(--blue);text-decoration:none;">📞 ${p.number}</a>` 
+          : '<span style="font-size:11px;color:var(--text-muted);">—</span>'}
+      </div>`).join('');
+
+
+  document.getElementById('modal-resource-title').textContent = resource.resource;
+  document.getElementById('modal-resource-body').innerHTML = `
+    <div class="detail-row" style="margin-bottom:8px;"><span>Tipo</span><span>${resource.resource_type}</span></div>
+    <div class="detail-row" style="margin-bottom:8px;"><span>Stato</span>
+      <span><span class="rc-status-badge ${status}">${statusItalian(status)}</span></span></div>
+    <div class="detail-row" style="margin-bottom:8px;"><span>Interventi attivi</span><span>${rcs?.active_responses || 0}</span></div>
+    <div class="detail-row" style="margin-bottom:8px;"><span>Interventi totali</span><span>${history.length}</span></div>
+    <div class="detail-row" style="margin-bottom:12px;"><span>Ultima posizione</span><span>${formatTime(rcs?.location_updated_at)}</span></div>
+    ${zoneLabel ? `<div class="detail-row" style="margin-bottom:8px;"><span>Zona attuale</span><span style="font-weight:700;color:var(--blue);">${zoneLabel}</span></div>` : ''}
+    ${resource.notes ? `<div style="font-size:12px;color:var(--text-secondary);margin-bottom:14px;
+      padding:8px;background:var(--bg);border-radius:var(--radius);">${resource.notes}</div>` : ''}
+    <div class="detail-label">Equipaggio</div>
+    ${crewRows}`;
+  openModal('modal-resource');
 }
  
-/* ── PANEL RESIZE ──────────────────────────────────────────── */
+async function handleResourceStatus(resourceId, status) {
+  const ok = await setResourceStatus(resourceId, status);
+  if (!ok) { showToast('Errore aggiornamento stato', 'error'); return; }
+
+  showToast(`Risorsa ${statusItalian(status)}`, 'success');
+  closeModal('modal-resource');
+  await loadAllResources();
+}
+ 
+/* ================================================================
+   LAYOUT
+   initPanelResize    — wires all drag handles (horizontal + vertical).
+   setupVerticalResize — handles dragging between two stacked sections.
+   setupResize        — handles dragging a panel's horizontal width.
+================================================================ */
 function initPanelResize() {
   // Horizontal (left/right panel width)
   setupResize('resize-left',  'panel-left',  160, 480, false);
@@ -1576,22 +1655,31 @@ function setupResize(handleId, panelId, min, max, isLeft) {
   }
 }
  
-/* ── MODAL HELPERS ─────────────────────────────────────────── */
+/* ================================================================
+   HELPERS
+   openModal / closeModal  — show/hide a modal overlay by id.
+   showScreen              — switches the active screen, invalidates
+                             map size when switching to screen-main.
+   formatIncidentType      — incident_type enum → Italian label.
+   formatOutcome           — outcome enum → Italian label.
+   formatTime              — ISO timestamp → HH:MM string.
+   statusItalian           — status enum → Italian label.
+================================================================ */
 function openModal(id)  { document.getElementById(id)?.classList.remove('hidden'); }
+
 function closeModal(id) { document.getElementById(id)?.classList.add('hidden'); }
  
-/* ── SCREEN HELPER ─────────────────────────────────────────── */
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id)?.classList.add('active');
   if (id === 'screen-main' && PCA.map) setTimeout(() => PCA.map.invalidateSize(), 100);
 }
  
-/* ── FORMAT HELPERS ────────────────────────────────────────── */
 function formatIncidentType(type) {
   return { medical:'Medico', trauma:'Trauma', cardiac:'Cardiaco',
     respiratory:'Respiratorio', environmental:'Ambientale', other:'Altro' }[type] || type;
 }
+
 function formatOutcome(outcome) {
   return {
     treating:'In trattamento', en_route_to_incident:'In arrivo',
@@ -1602,10 +1690,12 @@ function formatOutcome(outcome) {
     cancelled:'Annullato'
   }[outcome] || outcome;
 }
+
 function formatTime(ts) {
   if (!ts) return '—';
   return new Date(ts).toLocaleTimeString('it-IT', { hour:'2-digit', minute:'2-digit' });
 }
+
 function statusItalian(s) {
   return { free:'Libera', busy:'In intervento', stopped:'Ferma' }[s] || s;
 }

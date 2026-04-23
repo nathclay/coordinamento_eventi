@@ -1,9 +1,17 @@
 /* ================================================================
-   js/views/pca-moduli.js  —  Moduli page
-   Full operational table view of all resources, grouped by type.
+   js/views/pca-moduli.js  —  Moduli operativi page
+   Full resource table grouped by type, with status, coordinator
+   assignment, position age, and incident counts.
+
    Mounted by router.js into #page-content.
+   Depends on: pca-rpc.js, pca.js (formatTime, openResourceDetailModal,
+               statusItalian, ageLabel, ageClass)
 ================================================================ */
 
+/* ================================================================
+   MOUNT
+   mountModuli — builds page shell and triggers render.
+================================================================ */
 const MODULI_TYPES = [
   { key: 'ASM',  label: 'Ambulanze ASM' },
   { key: 'ASI',  label: 'Ambulanze ASI' },
@@ -29,42 +37,24 @@ async function mountModuli(container) {
   await renderModuliTables();
 }
 
+/* ================================================================
+   DATA & RENDER
+   renderModuliTables — fetches resources and response counts,
+                        groups by type, renders all sections.
+   buildTypeSection   — builds the table section for a resource type
+                        with free/busy/stopped summary counts.
+   buildResourceRow   — builds a single resource row with coordinator
+                        dropdown, position age and incident counts.
+================================================================ */
 async function renderModuliTables() {
   const body = document.getElementById('moduli-body');
   if (!body) return;
 
   // Fetch resources with current status + incident counts
-  const { data: resources, error } = await db
-    .from('resources')
-    .select(`
-      id, resource, resource_type, notes,
-      coordinator:coordinator_id(id, resource),
-      resources_current_status(
-        status, active_responses, geom,
-        location_updated_at, last_response_at
-      )
-    `)
-    .eq('event_id', PCA.eventId)
-    .not('resource_type', 'in', '("PMA","PCA")')
-    .order('resource');
-
-  if (error) {
-    body.innerHTML = `<div class="empty-state">Errore nel caricamento: ${error.message}</div>`;
-    return;
-  }
+  const resources = await fetchModuliResources(PCA.eventId);
 
   // Fetch total incident counts per resource (all non-cancelled responses)
-  const { data: responseCounts } = await db
-    .from('incident_responses')
-    .select('resource_id')
-    .eq('event_id', PCA.eventId)
-    .not('outcome', 'eq', 'cancelled');
-
-  // Build a map: resource_id → total count
-  const totalMap = {};
-  (responseCounts || []).forEach(r => {
-    totalMap[r.resource_id] = (totalMap[r.resource_id] || 0) + 1;
-  });
+  const totalMap = await fetchResourceResponseCounts(PCA.eventId);
 
   // Group by type
   const byType = {};
@@ -164,13 +154,15 @@ function buildResourceRow(r, totalMap) {
     </tr>`;
 }
 
+/* ================================================================
+   MUTATIONS
+   updateCoordinator — updates coordinator assignment via rpc,
+                       syncs PCA.allResources local cache so the
+                       home map popup stays in sync without a reload.
+================================================================ */
 async function updateCoordinator(resourceId, coordinatorId) {
-  const { error } = await db
-    .from('resources')
-    .update({ coordinator_id: coordinatorId || null })
-    .eq('id', resourceId);
-
-  if (error) {
+  const ok = await updateResourceCoordinator(resourceId, coordinatorId);
+  if (!ok) {
     showToast('Errore aggiornamento coordinatore', 'error');
     return;
   }
@@ -185,7 +177,13 @@ async function updateCoordinator(resourceId, coordinatorId) {
   }
 }
 
-/* ── HELPERS ──────────────────────────────────────────────────── */
+/* ================================================================
+   HELPERS
+   ageLabel — converts a timestamp to a human-readable age string
+              (e.g. "3 min fa", "1h 12m fa").
+   ageClass — returns a CSS class based on position age:
+              age-fresh (<10min), age-mid (<30min), age-stale.
+================================================================ */
 function ageLabel(ts) {
   const mins = Math.floor((Date.now() - new Date(ts)) / 60000);
   if (mins < 1)  return '< 1 min';

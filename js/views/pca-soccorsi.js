@@ -1,10 +1,19 @@
 /* ================================================================
    js/views/pca-soccorsi.js  —  Soccorsi page
-   Full incident table view, grouped by active/closed.
+   Full incident table grouped by active/closed, with patient data,
+   C/R/C dots, triage, resources involved and current status.
+
    Mounted by router.js into #page-content.
+   Depends on: pca-rpc.js, pca.js (formatTime, openIncidentDetailModal,
+               isPMAOnly)
 ================================================================ */
 
-/* ── MOUNT ─────────────────────────────────────────────────── */
+/* ================================================================
+   MOUNT
+   mountSoccorsi — builds page shell including all sub-modals
+                   (detail, add resource, close incident) and
+                   triggers render.
+================================================================ */
 async function mountSoccorsi(container) {
   container.innerHTML = `
     <div class="soccorsi-page">
@@ -89,42 +98,27 @@ async function mountSoccorsi(container) {
   await renderSoccorsiTables();
 }
 
-/* ── RENDER TABLES ─────────────────────────────────────────── */
+/* ================================================================
+   DATA & RENDER
+   renderSoccorsiTables — fetches all incidents with assessments,
+                          splits into active/closed, renders both.
+   buildSoccorsiSection — builds a titled table section with badge.
+   buildSoccorsiRow     — builds a single incident row, branching
+                          on isActive for different column sets.
+   buildCRCDots         — renders conscious/respiration/circulation
+                          as coloured dot indicators.
+================================================================ */
 async function renderSoccorsiTables() {
   const body = document.getElementById('soccorsi-body');
   if (!body) return;
 
-  const { data: incidents, error } = await db
-    .from('incidents')
-    .select(`
-      id, incident_type, status, current_triage,
-      patient_name, patient_identifier, patient_age, patient_gender,
-      created_at, updated_at, description,
-      incident_responses(
-        id, outcome, assigned_at, released_at,
-        resources!incident_responses_resource_id_fkey(id, resource, resource_type)
-      ),
-      patient_assessments(
-        id, assessed_at, triage,
-        conscious, respiration, circulation,
-        description, clinical_notes,
-        heart_rate, spo2, breathing_rate, blood_pressure, temperature, iv_access, bed_number_pma
-      )
-    `)
-    .eq('event_id', PCA.eventId)
-    .not('status', 'eq', 'cancelled')
-    .order('created_at', { ascending: false });
-
-  if (error) {
-    body.innerHTML = `<div class="empty-state">Errore: ${error.message}</div>`;
-    return;
-  }
+  const incidents = await fetchSoccorsiIncidents(PCA.eventId);
 
   const updatedEl = document.getElementById('soccorsi-updated');
   if (updatedEl) updatedEl.textContent = `Aggiornato alle ${formatTime(new Date().toISOString())}`;
 
   // Filter out pure PMA walk-ins (all responses are PMA type)
-  const visible = (incidents || []).filter(i => !isPMAOnly(i));
+  const visible = incidents.filter(i => !isPMAOnly(i));
 
   const active = visible.filter(i => ['open', 'in_progress'].includes(i.status));
   const closed = visible.filter(i => ['resolved', 'taken_to_hospital', 'in_progress_in_pma'].includes(i.status));
@@ -134,7 +128,6 @@ async function renderSoccorsiTables() {
   `;
 }
 
-/* ── SECTION BUILDER ───────────────────────────────────────── */
 function buildSoccorsiSection(title, incidents, isActive) {
   const badge = isActive
     ? `<span class="side-badge badge-active">${incidents.length}</span>`
@@ -185,7 +178,6 @@ function buildSoccorsiSection(title, incidents, isActive) {
     </div>`;
 }
 
-/* ── ROW BUILDER ───────────────────────────────────────────── */
 function buildSoccorsiRow(i, isActive) {
   const triage = i.current_triage || 'none';
   const triageLabels = { red: 'Rosso', yellow: 'Giallo', green: 'Verde', white: 'Bianco', none: 'ND' };
@@ -274,7 +266,6 @@ function buildSoccorsiRow(i, isActive) {
   }
 }
 
-/* C/R/C colored dots */
 function buildCRCDots(assessment) {
   if (!assessment) return '<span style="color:var(--text-muted);font-size:11px;">—</span>';
   const dot = val => {

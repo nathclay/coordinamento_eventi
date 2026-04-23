@@ -1,7 +1,16 @@
 /* ================================================================
    js/views/pca-hospital.js  —  Ospedalizzazioni page
+   Read-only table of all patients currently in transport to
+   hospital or already hospitalised, with latest vitals.
+
+   Mounted by router.js into #page-content.
+   Depends on: pca-rpc.js, pca.js (formatTime, openIncidentDetailModal)
 ================================================================ */
 
+/* ================================================================
+   MOUNT
+   mountOspedalizzazioni — builds the page shell and triggers render.
+================================================================ */
 async function mountOspedalizzazioni(container) {
   container.innerHTML = `
     <div class="hospital-page">
@@ -16,45 +25,25 @@ async function mountOspedalizzazioni(container) {
   await renderOspedalizzazioni();
 }
 
+/* ================================================================
+   DATA & RENDER
+   renderOspedalizzazioni — fetches hospital responses and latest
+                            assessments, renders in-progress and
+                            completed sections.
+   buildHospitalTable     — builds the HTML table for a set of rows.
+================================================================ */
 async function renderOspedalizzazioni() {
   const body = document.getElementById('hospital-body');
   if (!body) return;
 
   // Fetch all hospital responses
-  const { data: responses, error } = await db
-    .from('incident_responses')
-    .select(`
-      id, outcome, assigned_at, released_at, dest_hospital, hospital_info, gipse, notes,
-      incident_id,
-      incidents(
-        id, patient_name, patient_identifier, patient_age, patient_gender, current_triage
-      ),
-      resources!incident_responses_resource_id_fkey(id, resource, resource_type)
-    `)
-    .eq('event_id', PCA.eventId)
-    .in('outcome', ['taken_to_hospital', 'en_route_to_hospital'])
-    .order('assigned_at', { ascending: false });
+  const responses = await fetchHospitalResponses(PCA.eventId);
 
-  if (error) {
-    body.innerHTML = `<div class="empty-state">Errore: ${error.message}</div>`;
-    return;
-  }
 
   // Fetch latest assessment per incident
-  const incidentIds = [...new Set((responses || []).map(r => r.incident_id).filter(Boolean))];
-  let assessmentMap = {};
-  if (incidentIds.length > 0) {
-    const { data: assessments } = await db
-      .from('patient_assessments')
-      .select('incident_id, assessed_at, triage, heart_rate, spo2, breathing_rate, blood_pressure, temperature, gcs_total, hgt, iv_access')
-      .in('incident_id', incidentIds)
-      .order('assessed_at', { ascending: false });
+  const incidentIds = [...new Set(responses.map(r => r.incident_id).filter(Boolean))];
+  const assessmentMap = await fetchHospitalAssessments(incidentIds);
 
-    // Keep only latest per incident
-    (assessments || []).forEach(a => {
-      if (!assessmentMap[a.incident_id]) assessmentMap[a.incident_id] = a;
-    });
-  }
 
   const updatedEl = document.getElementById('hospital-updated');
   if (updatedEl) updatedEl.textContent =

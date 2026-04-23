@@ -1,10 +1,23 @@
 /* ================================================================
    js/views/pca-dispositivo.js  —  Dispositivo page
-   Static personnel view grouped by resource type.
+   Personnel matrix grouped by resource type. Each resource shows
+   as a table row with crew cells per role. Supports inline editing
+   of personnel and resource details, coordinator assignment,
+   and column resize.
+
    Mounted by router.js into #page-content.
+   Depends on: supabase.js (db), pca.js (PCA, formatTime),
+               pca-import.js (openPersonnelImportModal,
+               openResourcesImportModal)
 ================================================================ */
 
-/* ── MOUNT ─────────────────────────────────────────────────── */
+/* ================================================================
+   MOUNT & RENDER
+   mountDispositivo  — builds page shell with import buttons,
+                       triggers render.
+   renderDispositivo — fetches all resources and personnel, groups
+                       both by type/resource, renders all sections.
+================================================================ */
 async function mountDispositivo(container) {
     container.innerHTML = `
     <div class="disp-page">
@@ -26,38 +39,27 @@ async function mountDispositivo(container) {
   await renderDispositivo();
 }
 
-/* ── MAIN RENDER ───────────────────────────────────────────── */
 async function renderDispositivo() {
     const body = document.getElementById('disp-body');
     if (!body) return;
 
     // Fetch all resources for this event (excluding PCA)
-    const { data: resources, error: resError } = await db
-        .from('resources')
-        .select('id, resource, resource_type, geom, notes, user_email, targa, start_time, end_time, coordinator:coordinator_id(resource)')
-        .eq('event_id', PCA.eventId)
-        .order('resource');
-    // Fetch all personnel for this event
-    const { data: personnel, error: perError } = await db
-        .from('personnel')
-        .select('id, name, surname, comitato, number, qualifications, role, resource_fk:resource, present')
-        .eq('event_id', PCA.eventId)
-        .order('surname');
-
-    if (resError || perError) {
-        body.innerHTML = `<div class="empty-state">Errore nel caricamento</div>`;
-        return;
+    const [allResources, allPersonnel] = await Promise.all([
+      fetchDispositivoResources(PCA.eventId),
+      fetchDispositivoPersonnel(PCA.eventId),
+    ]);
+    if (!allResources.length && !allPersonnel.length) {
+      body.innerHTML = '<div class="empty-state">Errore nel caricamento</div>'; return;
     }
+
     const updatedEl = document.getElementById('disp-updated');
     if (updatedEl) updatedEl.textContent =
         `Aggiornato alle ${formatTime(new Date().toISOString())}`;
 
-    const allResources = resources || [];
-    const allPersonnel = personnel || [];
     _allDispResources = allResources;
     // Group personnel by resource_id
     const byResource = {};
-    Object.keys(byResource)
+
     allPersonnel.forEach(p => {
     const key = p.resource_fk || '__unassigned__';
     if (!byResource[key]) byResource[key] = [];
@@ -128,6 +130,26 @@ async function renderDispositivo() {
     initDispResize();
 }
 
+/* ================================================================
+   RESOURCE INFO CELLS
+   buildResourceInfoHeaders — returns the standard resource column
+                              header cells (position, coordinator,
+                              schedule, email, notes, targa).
+   buildResourceInfoCells   — returns the data cells for a resource
+                              row including coordinator dropdown.
+   updateDispCoordinator    — updates coordinator_id via db,
+                              syncs local _allDispResources cache.
+================================================================ */
+function buildResourceInfoHeaders(includesTarga = false) {
+  return `
+    <th>Posizione</th>
+    <th>Coordinatore</th>
+    <th>Orario</th>
+    <th>Email</th>
+    <th>Note</th>
+    ${includesTarga ? '<th>Targa</th>' : ''}`;
+}
+
 function buildResourceInfoCells(r, includesTarga = false) {
     // Position
     let posCell = '—';
@@ -175,12 +197,9 @@ function buildResourceInfoCells(r, includesTarga = false) {
 }
 
 async function updateDispCoordinator(resourceId, coordinatorId) {
-  const { error } = await db
-    .from('resources')
-    .update({ coordinator_id: coordinatorId || null })
-    .eq('id', resourceId);
+  const ok = await updateResourceCoordinator(resourceId, coordinatorId);
+  if (!ok) { showToast('Errore aggiornamento coordinatore', 'error'); return; }
 
-  if (error) { showToast('Errore aggiornamento coordinatore', 'error'); return; }
   showToast('Coordinatore aggiornato ✓', 'success');
 
   // Update local cache so re-renders stay in sync
@@ -191,19 +210,12 @@ async function updateDispCoordinator(resourceId, coordinatorId) {
   }
 }
 
-function buildResourceInfoHeaders(includesTarga = false) {
-  return `
-    <th>Posizione</th>
-    <th>Coordinatore</th>
-    <th>Orario</th>
-    <th>Email</th>
-    <th>Note</th>
-    ${includesTarga ? '<th>Targa</th>' : ''}`;
-}
-
-/*Resize columsns */
-
-// Default widths and minimums per column header text
+/* ================================================================
+   COLUMN RESIZE
+   COL_DEFAULTS   — default and minimum widths per column label.
+   initDispResize — attaches drag handles to all table headers,
+                    allowing per-column width adjustment.
+================================================================ */
 const COL_DEFAULTS = {
   'Risorsa':          { default: 90,  min: 60  },
   'Posizione':        { default: 50,  min: 60  },
@@ -267,42 +279,19 @@ function initDispResize() {
   });
 }
 
-/* ── PERSON CARD ───────────────────────────────────────────── */
-/* ROLES  */
-const PERSONNEL_ROLES = [
-  'Autista', 'Soccorritore', 'Infermiere', 'Medico',
-  'OPEM', 'Coordinatore', 'Altro'
-];
-
-function buildPersonCard(p, resourceId = null, suggestedRole = null) {
-  if (!p) {
-    if (!resourceId) return `<div class="disp-person disp-empty">—</div>`;
-    return `
-      <div class="disp-person disp-empty disp-clickable"
-        onclick="openPersonModal(null, '${resourceId}', '${suggestedRole || ''}')">
-        <span style="font-size:16px;color:var(--border-bright);">+</span>
-      </div>`;
-  }
-  const bg = p.present === true  ? 'rgba(63,185,80,0.12)'
-           : p.present === false ? 'rgba(226,75,74,0.12)'
-           : 'transparent';
-  const presentClass = p.present === true  ? 'disp-person-present'
-                   : p.present === false ? 'disp-person-absent'
-                   : '';
-  return `
-    <div class="disp-person disp-clickable" data-present="${p.present}"
-      onclick="openPersonModal('${p.id}')">
-      <div class="disp-person-name">${p.surname} ${p.name}</div>
-      ${p.comitato       ? `<div class="disp-person-meta">${p.comitato}</div>` : ''}
-      ${p.number         ? `<div class="disp-person-meta">
-        <a href="tel:${p.number}" class="disp-phone" onclick="event.stopPropagation()">
-          ${p.number}</a></div>` : ''}
-      ${p.qualifications ? `<div class="disp-person-qual">${p.qualifications}</div>` : ''}
-    </div>`;
-}
-
-
-/* ── ASM / ASI SECTION ─────────────────────────────────────── */
+/* ================================================================
+   SECTION BUILDERS
+   buildAmbulanceSection   — builds ASM/ASI/MM/PMA table section.
+                             Dynamically sizes soccorritore and
+                             extra columns to fit actual crew.
+   buildSAPSection_labeled — builds SAP/BICI table section with
+                             volontario and extra columns.
+   buildLDCSection         — builds LDC/PCA coordinator section.
+   buildPoolSection        — builds a flat grid for unstructured
+                             groups (ALTRO, non assegnati).
+   buildSection            — shared section wrapper with header,
+                             badge count, and scrollable table.
+================================================================ */
 function buildAmbulanceSection(type, resources, byResource, minSocc = 2, includeTarga = true) {
     // Calculate maxSocc and maxExtras across all resources
     let maxSocc   = minSocc;
@@ -373,7 +362,7 @@ function buildAmbulanceSection(type, resources, byResource, minSocc = 2, include
 
   return buildSection(type, headers, rows);
 }
-/* ── SAP SECTION ───────────────────────────────────────────── */
+
 function buildSAPSection(resources, byResource) {
   return buildSAPSection_labeled('SAP', resources, byResource);
 }
@@ -437,7 +426,6 @@ function buildSAPSection_labeled(title, resources, byResource) {
   return buildSection(title, headers, rows);
 }
 
-/* ── LDC SECTION ───────────────────────────────────────────── */
 function buildLDCSection(resources, byResource, title = 'LDC — Coordinatori') {
   let maxCols = 3;
   resources.forEach(r => {
@@ -472,6 +460,257 @@ function buildLDCSection(resources, byResource, title = 'LDC — Coordinatori') 
   return buildSection(title, headers, rows);
 }
 
+function buildPoolSection(title, people) {
+  const MAX_COLS = 5;
+
+  if (people.length === 0 && title !== 'Non assegnati') return '';
+
+  if (people.length === 0) {
+    return `
+      <div class="disp-section">
+        <div class="disp-section-header">
+          <span class="disp-section-title">${title}</span>
+          <span class="side-badge">0</span>
+        </div>
+        <div class="empty-state" style="padding:16px;">Nessun personale</div>
+      </div>`;
+  }
+
+  // Build headers
+  const headers = Array.from({ length: MAX_COLS },
+    () => `<th>Volontario</th>`).join('');
+
+  // Fill grid left-to-right, top-to-bottom
+  const numRows = Math.ceil(people.length / MAX_COLS);
+  let rows = '';
+  for (let row = 0; row < numRows; row++) {
+    const cells = Array.from({ length: MAX_COLS }, (_, col) => {
+      const idx = row * MAX_COLS + col;
+      return `<td>${buildPersonCard(people[idx] || null)}</td>`;
+    }).join('');
+    rows += `<tr>${cells}</tr>`;
+  }
+
+  return buildSection(title, headers, rows, people.length);
+}
+
+function buildSection(title, headers, rows, count) {
+  const badge = count !== undefined ? count :
+    (rows.match(/<tr>/g) || []).length;
+
+  return `
+    <div class="disp-section">
+      <div class="disp-section-header">
+        <span class="disp-section-title">${title}</span>
+        <span class="side-badge">${badge}</span>
+      </div>
+      <div class="disp-table-wrapper">
+        <table class="disp-table">
+          <thead><tr>${headers}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+/* ================================================================
+   PERSON CARD
+   PERSONNEL_ROLES — allowed role values for the dropdown.
+   buildPersonCard — renders a clickable person card with name,
+                     comitato, phone and qualifications.
+                     Empty slots show a + button to add personnel.
+================================================================ */
+const PERSONNEL_ROLES = [
+  'Autista', 'Soccorritore', 'Infermiere', 'Medico',
+  'OPEM', 'Coordinatore', 'Altro'
+];
+
+function buildPersonCard(p, resourceId = null, suggestedRole = null) {
+  if (!p) {
+    if (!resourceId) return `<div class="disp-person disp-empty">—</div>`;
+    return `
+      <div class="disp-person disp-empty disp-clickable"
+        onclick="openPersonModal(null, '${resourceId}', '${suggestedRole || ''}')">
+        <span style="font-size:16px;color:var(--border-bright);">+</span>
+      </div>`;
+  }
+  const bg = p.present === true  ? 'rgba(63,185,80,0.12)'
+           : p.present === false ? 'rgba(226,75,74,0.12)'
+           : 'transparent';
+  const presentClass = p.present === true  ? 'disp-person-present'
+                   : p.present === false ? 'disp-person-absent'
+                   : '';
+  return `
+    <div class="disp-person disp-clickable" data-present="${p.present}"
+      onclick="openPersonModal('${p.id}')">
+      <div class="disp-person-name">${p.surname} ${p.name}</div>
+      ${p.comitato       ? `<div class="disp-person-meta">${p.comitato}</div>` : ''}
+      ${p.number         ? `<div class="disp-person-meta">
+        <a href="tel:${p.number}" class="disp-phone" onclick="event.stopPropagation()">
+          ${p.number}</a></div>` : ''}
+      ${p.qualifications ? `<div class="disp-person-qual">${p.qualifications}</div>` : ''}
+    </div>`;
+}
+
+/* ================================================================
+   PERSON MODAL
+   _allDispResources  — local cache of resources for the dropdown,
+                        populated on each modal open.
+   openPersonModal    — fetches resources and optional person data,
+                        renders the edit/create form modal.
+   savePersonnel      — inserts or updates a personnel row,
+                        refreshes the full dispositivo view.
+   deletePersonnel    — deletes a personnel row after confirmation.
+================================================================ */
+let _allDispResources = []; // cached for the resource dropdown
+
+async function openPersonModal(personnelId, presetResourceId = null, presetRole = null) {
+  // Fetch all resources for dropdown
+  _allDispResources = await fetchDispResourceDropdown(PCA.eventId);
+  const person = personnelId ? await fetchPersonnelById(personnelId) : null;
+
+  const isNew   = !person;
+  const title   = isNew ? 'Nuovo personale' : `${person.name} ${person.surname}`;
+  const resOpts = _allDispResources.map(r =>
+    `<option value="${r.id}"
+      ${(person?.resource || presetResourceId) === r.id ? 'selected' : ''}>
+      ${r.resource} (${r.resource_type})
+    </option>`).join('');
+
+  const roleOpts = PERSONNEL_ROLES.map(role =>
+    `<option value="${role}"
+      ${(person?.role || presetRole) === role ? 'selected' : ''}>
+      ${role}
+    </option>`).join('');
+
+  document.getElementById('disp-modal-title').textContent = title;
+  document.getElementById('disp-modal-body').innerHTML = `
+    <div class="form-row">
+      <div class="form-group">
+        <label>Nome <span style="color:var(--red)">*</span></label>
+        <input type="text" id="dp-name" value="${person?.name || ''}" placeholder="Nome" />
+      </div>
+      <div class="form-group">
+        <label>Cognome <span style="color:var(--red)">*</span></label>
+        <input type="text" id="dp-surname" value="${person?.surname || ''}" placeholder="Cognome" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Codice Fiscale</label>
+        <input type="text" id="dp-cf" value="${person?.cf || ''}" placeholder="-" 
+          style="text-transform:uppercase" />
+      </div>
+      <div class="form-group">
+        <label>Ruolo</label>
+        <select id="dp-role">${roleOpts}</select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Comitato</label>
+        <input type="text" id="dp-comitato" value="${person?.comitato || ''}" placeholder="-" />
+      </div>
+      <div class="form-group">
+        <label>Telefono</label>
+        <input type="tel" id="dp-number" value="${person?.number || ''}" placeholder="-" />
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="dp-email" value="${person?.email || ''}" placeholder="mario@example.com" />
+      </div>
+      <div class="form-group">
+        <label>Qualifiche</label>
+        <input type="text" id="dp-qualifications" value="${person?.qualifications || ''}" 
+          placeholder="Es. BLSD, PTC" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Risorsa assegnata</label>
+      <select id="dp-resource">${resOpts}</select>
+    </div>
+    <div class="form-group">
+      <label>Presente</label>
+      <select id="dp-present">
+        <option value=""     ${person?.present === null  ? 'selected' : ''}>— Non specificato —</option>
+        <option value="true"  ${person?.present === true  ? 'selected' : ''}>✓ Presente</option>
+        <option value="false" ${person?.present === false ? 'selected' : ''}>✗ Assente</option>
+      </select>
+    </div>
+    <div id="dp-error" class="error-msg"></div>`;
+
+  const saveBtn = document.getElementById('disp-modal-save');
+  saveBtn.onclick = () => savePersonnel(personnelId);
+
+  // Show delete button only for existing person
+  const delBtn = document.getElementById('disp-modal-delete');
+  if (isNew) {
+    delBtn.style.display = 'none';
+  } else {
+    delBtn.style.display = 'block';
+    delBtn.onclick = () => deletePersonnel(personnelId);
+  }
+
+  document.getElementById('modal-disp-person').classList.remove('hidden');
+}
+
+async function savePersonnel(personnelId) {
+  const name    = document.getElementById('dp-name').value.trim();
+  const surname = document.getElementById('dp-surname').value.trim();
+  const errEl   = document.getElementById('dp-error');
+  errEl.textContent = '';
+
+  if (!name)    { errEl.textContent = 'Nome obbligatorio.';    return; }
+  if (!surname) { errEl.textContent = 'Cognome obbligatorio.'; return; }
+
+  const saveBtn = document.getElementById('disp-modal-save');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Salvataggio...';
+  const val = document.getElementById('dp-present').value;
+  
+  const payload = {
+    name,
+    surname,
+    cf:             document.getElementById('dp-cf').value.trim().toUpperCase() || null,
+    role:           document.getElementById('dp-role').value || null,
+    comitato:       document.getElementById('dp-comitato').value.trim() || null,
+    number:         document.getElementById('dp-number').value.trim() || null,
+    email:          document.getElementById('dp-email').value.trim() || null,
+    qualifications: document.getElementById('dp-qualifications').value.trim() || null,
+    resource:       document.getElementById('dp-resource').value || null,
+    present:        val === 'true' ? true : val === 'false' ? false : null,
+  };
+
+  const result = await upsertPersonnel(personnelId, payload, PCA.eventId);
+  saveBtn.disabled = false;
+  saveBtn.textContent = 'Salva';
+  if (!result.ok) { errEl.textContent = result.message; return; }
+
+  showToast(personnelId ? 'Personale aggiornato ✓' : 'Personale aggiunto ✓', 'success');
+  document.getElementById('modal-disp-person').classList.add('hidden');
+  await renderDispositivo();
+}
+
+async function deletePersonnel(personnelId) {
+  if (!confirm('Eliminare questo personale?')) return;
+
+  const ok = await removePersonnel(personnelId);
+  if (!ok) { document.getElementById('dp-error').textContent = 'Errore durante l\'eliminazione.'; return; }
+
+  showToast('Personale eliminato', 'success');
+  document.getElementById('modal-disp-person').classList.add('hidden');
+  await renderDispositivo();
+}
+
+/* ================================================================
+   RESOURCE MODAL
+   openResourceModal — renders the resource edit modal (position,
+                       coordinator, schedule, email, notes).
+   saveResource      — updates the resource row, handles geom
+                       construction from lat/lng inputs.
+================================================================ */
 async function openResourceModal(resourceId) {
   const r = _allDispResources.find(r => r.id === resourceId);
   if (!r) return;
@@ -565,18 +804,23 @@ async function saveResource(resourceId) {
     payload.geom = `POINT(${lng} ${lat})`;
   }
 
-  const { error } = await db.from('resources').update(payload).eq('id', resourceId);
+  const result = await updateResourceDetails(resourceId, payload);
 
   saveBtn.disabled = false;
   saveBtn.textContent = 'Salva';
 
-  if (error) { errEl.textContent = error.message; return; }
+  if (!result) { errEl.textContent = 'Errore durante il salvataggio.'; return; }
 
   showPCAToast('Risorsa aggiornata ✓', 'success');
   document.getElementById('modal-disp-person').classList.add('hidden');
   await renderDispositivo();
 }
 
+/* ================================================================
+   HELPERS
+   parseDispDateTime  — parses DD/MM/YYYY HH:MM → ISO string.
+   formatDispDateTime — formats ISO string → DD/MM/YYYY HH:MM.
+================================================================ */
 function parseDispDateTime(str) {
   if (!str) return null;
   const match = str.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/);
@@ -595,230 +839,4 @@ function formatDispDateTime(isoStr) {
   const hh   = String(d.getHours()).padStart(2,'0');
   const min  = String(d.getMinutes()).padStart(2,'0');
   return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
-}
-
-/* ── POOL SECTION (ALTRO, BICI, MM, Non assegnati) ─────────── */
-function buildPoolSection(title, people) {
-  const MAX_COLS = 5;
-
-  if (people.length === 0 && title !== 'Non assegnati') return '';
-
-  if (people.length === 0) {
-    return `
-      <div class="disp-section">
-        <div class="disp-section-header">
-          <span class="disp-section-title">${title}</span>
-          <span class="side-badge">0</span>
-        </div>
-        <div class="empty-state" style="padding:16px;">Nessun personale</div>
-      </div>`;
-  }
-
-  // Build headers
-  const headers = Array.from({ length: MAX_COLS },
-    () => `<th>Volontario</th>`).join('');
-
-  // Fill grid left-to-right, top-to-bottom
-  const numRows = Math.ceil(people.length / MAX_COLS);
-  let rows = '';
-  for (let row = 0; row < numRows; row++) {
-    const cells = Array.from({ length: MAX_COLS }, (_, col) => {
-      const idx = row * MAX_COLS + col;
-      return `<td>${buildPersonCard(people[idx] || null)}</td>`;
-    }).join('');
-    rows += `<tr>${cells}</tr>`;
-  }
-
-  return buildSection(title, headers, rows, people.length);
-}
-
-/* ── SECTION WRAPPER ───────────────────────────────────────── */
-function buildSection(title, headers, rows, count) {
-  const badge = count !== undefined ? count :
-    (rows.match(/<tr>/g) || []).length;
-
-  return `
-    <div class="disp-section">
-      <div class="disp-section-header">
-        <span class="disp-section-title">${title}</span>
-        <span class="side-badge">${badge}</span>
-      </div>
-      <div class="disp-table-wrapper">
-        <table class="disp-table">
-          <thead><tr>${headers}</tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    </div>`;
-}
-
-/* ── PERSON MODAL ──────────────────────────────────────────── */
-let _allDispResources = []; // cached for the resource dropdown
-
-async function openPersonModal(personnelId, presetResourceId = null, presetRole = null) {
-  // Fetch all resources for dropdown
-  const { data: resources } = await db
-    .from('resources')
-    .select('id, resource, resource_type')
-    .eq('event_id', PCA.eventId)
-    .order('resource');
-  _allDispResources = resources || [];
-
-  let person = null;
-  if (personnelId) {
-    const { data } = await db
-      .from('personnel')
-      .select('*')
-      .eq('id', personnelId)
-      .single();
-    person = data;
-  }
-
-  const isNew   = !person;
-  const title   = isNew ? 'Nuovo personale' : `${person.name} ${person.surname}`;
-  const resOpts = _allDispResources.map(r =>
-    `<option value="${r.id}"
-      ${(person?.resource || presetResourceId) === r.id ? 'selected' : ''}>
-      ${r.resource} (${r.resource_type})
-    </option>`).join('');
-
-  const roleOpts = PERSONNEL_ROLES.map(role =>
-    `<option value="${role}"
-      ${(person?.role || presetRole) === role ? 'selected' : ''}>
-      ${role}
-    </option>`).join('');
-
-  document.getElementById('disp-modal-title').textContent = title;
-  document.getElementById('disp-modal-body').innerHTML = `
-    <div class="form-row">
-      <div class="form-group">
-        <label>Nome <span style="color:var(--red)">*</span></label>
-        <input type="text" id="dp-name" value="${person?.name || ''}" placeholder="Nome" />
-      </div>
-      <div class="form-group">
-        <label>Cognome <span style="color:var(--red)">*</span></label>
-        <input type="text" id="dp-surname" value="${person?.surname || ''}" placeholder="Cognome" />
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Codice Fiscale</label>
-        <input type="text" id="dp-cf" value="${person?.cf || ''}" placeholder="-" 
-          style="text-transform:uppercase" />
-      </div>
-      <div class="form-group">
-        <label>Ruolo</label>
-        <select id="dp-role">${roleOpts}</select>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Comitato</label>
-        <input type="text" id="dp-comitato" value="${person?.comitato || ''}" placeholder="-" />
-      </div>
-      <div class="form-group">
-        <label>Telefono</label>
-        <input type="tel" id="dp-number" value="${person?.number || ''}" placeholder="-" />
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Email</label>
-        <input type="email" id="dp-email" value="${person?.email || ''}" placeholder="mario@example.com" />
-      </div>
-      <div class="form-group">
-        <label>Qualifiche</label>
-        <input type="text" id="dp-qualifications" value="${person?.qualifications || ''}" 
-          placeholder="Es. BLSD, PTC" />
-      </div>
-    </div>
-    <div class="form-group">
-      <label>Risorsa assegnata</label>
-      <select id="dp-resource">${resOpts}</select>
-    </div>
-    <div class="form-group">
-      <label>Presente</label>
-      <select id="dp-present">
-        <option value=""     ${person?.present === null  ? 'selected' : ''}>— Non specificato —</option>
-        <option value="true"  ${person?.present === true  ? 'selected' : ''}>✓ Presente</option>
-        <option value="false" ${person?.present === false ? 'selected' : ''}>✗ Assente</option>
-      </select>
-    </div>
-    <div id="dp-error" class="error-msg"></div>
-    <div id="dp-error" class="error-msg"></div>`;
-
-  const saveBtn = document.getElementById('disp-modal-save');
-  saveBtn.onclick = () => savePersonnel(personnelId);
-
-  // Show delete button only for existing person
-  const delBtn = document.getElementById('disp-modal-delete');
-  if (isNew) {
-    delBtn.style.display = 'none';
-  } else {
-    delBtn.style.display = 'block';
-    delBtn.onclick = () => deletePersonnel(personnelId);
-  }
-
-  document.getElementById('modal-disp-person').classList.remove('hidden');
-}
-
-/* ── SAVE ──────────────────────────────────────────────────── */
-async function savePersonnel(personnelId) {
-  const name    = document.getElementById('dp-name').value.trim();
-  const surname = document.getElementById('dp-surname').value.trim();
-  const errEl   = document.getElementById('dp-error');
-  errEl.textContent = '';
-
-  if (!name)    { errEl.textContent = 'Nome obbligatorio.';    return; }
-  if (!surname) { errEl.textContent = 'Cognome obbligatorio.'; return; }
-
-  const saveBtn = document.getElementById('disp-modal-save');
-  saveBtn.disabled = true;
-  saveBtn.textContent = 'Salvataggio...';
-  const val = document.getElementById('dp-present').value;
-  
-  const payload = {
-    name,
-    surname,
-    cf:             document.getElementById('dp-cf').value.trim().toUpperCase() || null,
-    role:           document.getElementById('dp-role').value || null,
-    comitato:       document.getElementById('dp-comitato').value.trim() || null,
-    number:         document.getElementById('dp-number').value.trim() || null,
-    email:          document.getElementById('dp-email').value.trim() || null,
-    qualifications: document.getElementById('dp-qualifications').value.trim() || null,
-    resource:       document.getElementById('dp-resource').value || null,
-    present:        val === 'true' ? true : val === 'false' ? false : null,
-  };
-
-  let error;
-  if (personnelId) {
-    ({ error } = await db.from('personnel').update(payload).eq('id', personnelId));
-  } else {
-    payload.event_id = PCA.eventId;
-    ({ error } = await db.from('personnel').insert(payload));
-  }
-
-  saveBtn.disabled = false;
-  saveBtn.textContent = 'Salva';
-
-  if (error) { errEl.textContent = error.message; return; }
-
-  showToast(personnelId ? 'Personale aggiornato ✓' : 'Personale aggiunto ✓', 'success');
-  document.getElementById('modal-disp-person').classList.add('hidden');
-  await renderDispositivo();
-}
-
-/* ── DELETE ────────────────────────────────────────────────── */
-async function deletePersonnel(personnelId) {
-  if (!confirm('Eliminare questo personale?')) return;
-
-  const { error } = await db.from('personnel').delete().eq('id', personnelId);
-  if (error) {
-    document.getElementById('dp-error').textContent = error.message;
-    return;
-  }
-
-  showToast('Personale eliminato', 'success');
-  document.getElementById('modal-disp-person').classList.add('hidden');
-  await renderDispositivo();
 }

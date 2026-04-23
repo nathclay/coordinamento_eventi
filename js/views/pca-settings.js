@@ -1,9 +1,22 @@
 /* ================================================================
    js/views/pca-settings.js  —  Impostazioni page
+   Event settings: mode toggles (is_route, is_grid), rich text notes,
+   and GeoJSON upload for all geo layers (route, grid, markers,
+   fixed resources, POI). Includes CRS detection and reprojection.
+
+   Mounted by router.js into #page-content.
+   Depends on: supabase.js (db), pca.js (PCA, showToast),
+               proj4.js (reprojection, loaded via CDN)
 ================================================================ */
 
 let _settingsEvent = null;
 
+/* ================================================================
+   MOUNT & RENDER
+   mountImpostazioni — builds page shell and triggers render.
+   renderSettings    — fetches event row, renders all settings cards,
+                       initialises rich text editors with saved content.
+================================================================ */
 async function mountImpostazioni(container) {
   container.innerHTML = `
     <div class="settings-page">
@@ -21,14 +34,9 @@ async function renderSettings() {
   const body = document.getElementById('settings-body');
   if (!body) return;
 
-  const { data: event, error } = await db
-    .from('events')
-    .select('id, name, is_route, is_grid, notes_general, notes_coordinators')
-    .eq('id', PCA.eventId)
-    .single();
+  const event = await fetchEventSettings(PCA.eventId);
+  if (!event) { body.innerHTML = '<div class="empty-state">Errore nel caricamento</div>'; return; }
 
-  if (error) { body.innerHTML = `<div class="empty-state">Errore: ${error.message}</div>`; return; }
-  _settingsEvent = event;
 
   body.innerHTML = `
     <!-- ── TOGGLES ── -->
@@ -108,17 +116,18 @@ async function renderSettings() {
   initEditor('editor-coordinator', event.notes_coordinators || '');
 }
 
-/* ── TOGGLES ────────────────────────────────────────────────── */
+/* ================================================================
+   EVENT SETTINGS
+   saveEventToggle — saves is_route / is_grid boolean to events table.
+   switchNoteTab   — switches between general and coordinator note tabs.
+   saveNotes       — saves rich editor HTML content to events table.
+================================================================ */
 async function saveEventToggle(field, value) {
-  const { error } = await db
-    .from('events')
-    .update({ [field]: value })
-    .eq('id', PCA.eventId);
-  if (error) { showToast('Errore salvataggio', 'error'); return; }
+  const ok = await updateEventFields(PCA.eventId, { [field]: value });
+  if (!ok) { showToast('Errore salvataggio', 'error'); return; }
   showToast(`${field === 'is_route' ? 'Modalità gara' : 'Griglia'} ${value ? 'attivata' : 'disattivata'} ✓`, 'success');
 }
 
-/* ── NOTES ──────────────────────────────────────────────────── */
 function switchNoteTab(tab, btn) {
   document.getElementById('note-tab-general').style.display     = tab === 'general'     ? '' : 'none';
   document.getElementById('note-tab-coordinator').style.display = tab === 'coordinator' ? '' : 'none';
@@ -126,6 +135,25 @@ function switchNoteTab(tab, btn) {
   btn.classList.add('active');
 }
 
+async function saveNotes(tab) {
+  const id    = tab === 'general' ? 'editor-general' : 'editor-coordinator';
+  const field = tab === 'general' ? 'notes_general'  : 'notes_coordinators';
+  const html  = document.getElementById(id)?.innerHTML || '';
+
+  const ok = await updateEventFields(PCA.eventId, { [field]: html });
+  if (!ok) { showToast('Errore salvataggio note', 'error'); return; }
+
+  showToast('Note salvate ✓', 'success');
+}
+
+/* ================================================================
+   RICH TEXT EDITOR
+   buildRichEditor    — returns the toolbar + contenteditable HTML.
+   initEditor         — sets initial HTML content on the editor div.
+   editorCmd          — executes a document.execCommand formatting command.
+   editorInsertLink   — prompts for URL and inserts a link.
+   editorInsertPhone  — prompts for a phone number and inserts a tel: link.
+================================================================ */
 function buildRichEditor(id, content) {
   return `
     <div class="rich-editor-wrap">
@@ -177,21 +205,16 @@ function editorInsertPhone(id) {
   document.execCommand('insertHTML', false, html);
 }
 
-async function saveNotes(tab) {
-  const id    = tab === 'general' ? 'editor-general' : 'editor-coordinator';
-  const field = tab === 'general' ? 'notes_general'  : 'notes_coordinators';
-  const html  = document.getElementById(id)?.innerHTML || '';
-
-  const { error } = await db
-    .from('events')
-    .update({ [field]: html })
-    .eq('id', PCA.eventId);
-
-  if (error) { showToast('Errore salvataggio note', 'error'); return; }
-  showToast('Note salvate ✓', 'success');
-}
-
-/* ── GEOMETRY UPLOAD ─────────────────────────────────────────── */
+/* ================================================================
+   GEO UPLOAD
+   buildGeoUpload   — returns the collapsible upload section HTML
+                      for a single geo layer.
+   toggleGeoSection — collapses/expands a geo upload section.
+   previewGeoJSON   — reads and parses the selected file, detects CRS,
+                      validates geometry types, renders a preview table.
+   uploadGeoJSON    — reprojects if needed, then deletes existing rows
+                      (replace mode) and inserts new features.
+================================================================ */
 function buildGeoUpload(key, label, geomType, table, primaryProp, hint) {
   return `
     <div class="geo-section" id="geo-section-${key}">
@@ -314,11 +337,8 @@ async function uploadGeoJSON(key, table, primaryProp) {
   try {
     // Replace: delete existing for this event
     if (mode === 'replace') {
-      const { error: delError } = await db
-        .from(table)
-        .delete()
-        .eq('event_id', PCA.eventId);
-      if (delError) throw delError;
+      const deleted = await deleteGeoLayer(PCA.eventId, table);
+      if (!deleted) throw new Error('Errore nella cancellazione dei layer esistenti');
     }
 
     // Build rows
@@ -339,8 +359,8 @@ async function uploadGeoJSON(key, table, primaryProp) {
       return base;
     });
 
-    const { error } = await db.from(table).insert(rows);
-    if (error) throw error;
+    const inserted = await insertGeoRows(table, rows);
+    if (!inserted) throw new Error('Errore nel caricamento delle geometrie');
 
     showToast(`${rows.length} geometrie caricate ✓`, 'success');
     preview.innerHTML += `<div style="color:var(--green);font-size:11px;margin-top:6px;">
@@ -352,7 +372,16 @@ async function uploadGeoJSON(key, table, primaryProp) {
   }
 }
 
-/* ── CRS DETECTION & REPROJECTION ───────────────────────────── */
+/* ================================================================
+   CRS DETECTION & REPROJECTION
+   detectCRS                  — extracts EPSG code from GeoJSON CRS field.
+   isWGS84                    — returns true if code is 4326, 4269 or null.
+   getProj4Def                — fetches proj4 definition string from epsg.io.
+   reprojectCoord             — reprojects a single coordinate pair.
+   reprojectGeometry          — reprojects all coordinates in a geometry.
+   reprojectFeaturesIfNeeded  — runs full reprojection pipeline if the
+                                file is not already WGS84.
+================================================================ */
 function detectCRS(geojson) {
   const crs = geojson?.crs?.properties?.name || '';
   if (!crs) return null;
@@ -420,7 +449,13 @@ async function reprojectFeaturesIfNeeded(geojson, features) {
   }));
 }
 
-/* ── GEOJSON → WKT ──────────────────────────────────────────── */
+/* ================================================================
+   GEOJSON → WKT
+   geojsonGeomToWKT — converts a GeoJSON geometry object to a
+                      PostGIS-compatible WKT string for DB insert.
+                      Supports Point, LineString, Polygon,
+                      MultiPolygon, MultiLineString.
+================================================================ */
 function geojsonGeomToWKT(geom) {
   if (!geom) return null;
 

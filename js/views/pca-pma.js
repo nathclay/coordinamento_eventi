@@ -1,13 +1,22 @@
 /* ================================================================
    js/views/pca-pma.js  —  PMA read-only view for PCA dashboard
-   Shows incoming, active, closed patients per PMA.
+   Shows incoming, in-treatment and closed patients per PMA,
+   with latest vitals. Tab per PMA resource.
+
    Mounted by router.js into #page-content.
+   Depends on: pca-rpc.js, pca.js (formatTime)
 ================================================================ */
 
 let _pcaPMAResources  = [];   // all PMA resources for this event
 let _pcaSelectedPMAId = null; // currently selected tab
 
-/* ── MOUNT ─────────────────────────────────────────────────── */
+/* ================================================================
+   MOUNT & TABS
+   mountPMA        — fetches PMA resources, builds tab bar,
+                     triggers first render.
+   renderPMATabs   — renders tab buttons, highlights selected.
+   selectPMATab    — switches selected PMA and refreshes view.
+================================================================ */
 async function mountPMA(container) {
   container.innerHTML = `
     <div class="pma-page">
@@ -33,14 +42,8 @@ async function mountPMA(container) {
     </div>`;
 
   // Fetch all PMA resources for this event
-  const { data: pmas, error } = await db
-    .from('resources')
-    .select('id, resource')
-    .eq('event_id', PCA.eventId)
-    .eq('resource_type', 'PMA')
-    .order('resource');
-
-  if (error || !pmas || pmas.length === 0) {
+  const pmas = await fetchPMAResources(PCA.eventId);
+  if (!pmas.length) {
     document.getElementById('pma-page-body').innerHTML =
       '<div class="empty-state">Nessun PMA configurato per questo evento</div>';
     return;
@@ -54,7 +57,6 @@ async function mountPMA(container) {
 
 }
 
-/* ── TABS ──────────────────────────────────────────────────── */
 function renderPMATabs() {
   const tabsEl = document.getElementById('pma-tabs');
   if (!tabsEl) return;
@@ -71,7 +73,15 @@ async function selectPMATab(pmaId) {
   await refreshPCAView();
 }
 
-/* ── MAIN REFRESH ──────────────────────────────────────────── */
+/* ================================================================
+   DATA & RENDER
+   refreshPCAView    — fetches incoming/active/closed in parallel
+                       for the selected PMA, renders all sections.
+   buildPMASection   — builds a titled table section for a patient
+                       group (incoming, active, closed).
+   buildPMARow       — builds a single patient row, branching on
+                       type for different column sets.
+================================================================ */
 async function refreshPCAView() {
   const body = document.getElementById('pma-page-body');
   if (!body) return;
@@ -92,81 +102,6 @@ async function refreshPCAView() {
     buildPMASection('✓ Chiusi',           closed,   'closed');
 }
 
-/* ── FETCH ─────────────────────────────────────────────────── */
-async function fetchPCAPMAIncoming(pmaId) {
-  const { data, error } = await db
-    .from('incident_responses')
-    .select(`
-      id, outcome, dest_pma_id, assigned_at,
-      incidents(
-        id, patient_name, patient_identifier, patient_age, patient_gender,
-        current_triage, description,
-        patient_assessments(
-          id, assessed_at, conscious, respiration, circulation,
-          walking, minor_injuries, heart_rate, spo2, breathing_rate,
-          blood_pressure, temperature, gcs_total, hgt, triage,
-          description, clinical_notes, iv_access
-        )
-      ),
-      resources!incident_responses_resource_id_fkey(resource, resource_type)
-    `)
-    .eq('outcome', 'en_route_to_pma')
-    .eq('dest_pma_id', pmaId)
-    .order('assigned_at', { ascending: false });
-
-  if (error) { console.error('fetchPCAPMAIncoming:', error); return []; }
-  return data || [];
-}
-
-async function fetchPCAPMAActive(pmaId) {
-  const { data, error } = await db
-    .from('incident_responses')
-    .select(`
-      id, outcome, assigned_at,
-      incidents(
-        id, patient_name, patient_identifier, patient_age, patient_gender,
-        current_triage, description,
-        patient_assessments(
-          id, assessed_at, conscious, respiration, circulation,
-          walking, minor_injuries, heart_rate, spo2, breathing_rate,
-          blood_pressure, temperature, gcs_total, hgt, triage,
-          description, clinical_notes, iv_access, bed_number_pma
-        )
-      )
-    `)
-    .eq('resource_id', pmaId)
-    .eq('outcome', 'treating')
-    .order('assigned_at', { ascending: false });
-
-  if (error) { console.error('fetchPCAPMAActive:', error); return []; }
-  return data || [];
-}
-
-async function fetchPCAPMAClosed(pmaId) {
-  const { data, error } = await db
-    .from('incident_responses')
-    .select(`
-      id, outcome, released_at, dest_hospital, handoff_to_response_id,
-      incidents(
-        id, patient_name, patient_identifier, patient_age, patient_gender,
-        current_triage,
-        patient_assessments(
-          id, assessed_at, conscious, respiration, circulation,
-          walking, minor_injuries, heart_rate, spo2, breathing_rate,
-          blood_pressure, temperature, gcs_total, hgt, triage,
-          description, clinical_notes, iv_access
-        )
-      )
-    `)
-    .eq('resource_id', pmaId)
-    .in('outcome', ['treated_and_released', 'handed_off'])
-    .order('released_at', { ascending: false });
-
-  if (error) { console.error('fetchPCAPMAClosed:', error); return []; }
-  return data || [];
-}
-
-/* ── SECTION BUILDER ───────────────────────────────────────── */
 function buildPMASection(title, rows, type) {
   const colspans = { incoming: 17, active: 18, closed: 17 };
 
@@ -210,7 +145,6 @@ function buildPMASection(title, rows, type) {
     </div>`;
 }
 
-/* ── ROW BUILDER ───────────────────────────────────────────── */
 function buildPMARow(row, type) {
   const inc = row.incidents;
   const a   = getPCALatestAssessment(inc.patient_assessments);
@@ -282,40 +216,15 @@ function buildPMARow(row, type) {
   </tr>`;
 }
 
-/* ── STORICO MODAL ─────────────────────────────────────────── */
+/* ================================================================
+   STORICO MODAL
+   openPCAStorico — fetches full assessment history for an incident
+                    via pca-rpc, renders the storico table modal.
+================================================================ */
 async function openPCAStorico(incidentId) {
-  const { data: inc } = await db
-    .from('incidents')
-    .select(`
-      *, patient_assessments(
-        id, assessed_at, conscious, respiration, circulation,
-        walking, minor_injuries, heart_rate, spo2, breathing_rate,
-        blood_pressure, temperature, gcs_total, hgt, triage,
-        description, clinical_notes, response_id
-      )`)
-    .eq('id', incidentId)
-    .single();
-
-  if (!inc) return;
-
-  // Resolve resource names
-  const responseIds = [...new Set(
-    (inc.patient_assessments || []).map(a => a.response_id).filter(Boolean)
-  )];
-  let resourceMap = {};
-  if (responseIds.length > 0) {
-    const { data: responses } = await db
-      .from('incident_responses')
-      .select('id, resources!incident_responses_resource_id_fkey(resource)')
-      .in('id', responseIds);
-    (responses || []).forEach(r => {
-      resourceMap[r.id] = r.resources?.resource ?? '—';
-    });
-  }
-
-  const assessments = (inc.patient_assessments || [])
-    .map(a => ({ ...a, resourceName: resourceMap[a.response_id] ?? '—' }))
-    .sort((a, b) => new Date(b.assessed_at) - new Date(a.assessed_at));
+  const result = await fetchPCAStorico(incidentId);
+  if (!result) return;
+  const { inc, assessments } = result;
 
   const yn = v => v === true
     ? '<span class="yn-cell yes">Sì</span>'
@@ -363,7 +272,14 @@ async function openPCAStorico(incidentId) {
   document.getElementById('modal-pca-pma-storico').classList.remove('hidden');
 }
 
-/* ── HELPERS ───────────────────────────────────────────────── */
+/* ================================================================
+   HELPERS
+   getPCALatestAssessment — returns the most recent assessment from
+                            an array, sorted by assessed_at.
+   buildPCATriageCell     — renders a triage colour dot.
+   buildPCAVitalsCells    — renders all vitals as table cells,
+                            showing — for missing values.
+================================================================ */
 function getPCALatestAssessment(assessments) {
   if (!assessments || assessments.length === 0) return null;
   return [...assessments]
