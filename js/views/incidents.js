@@ -1126,7 +1126,7 @@ async function buildDetailHTML(inc) {
         r => r.resource_id === STATE.resource.id
       );
 
-  const outcomePanelHTML = canClose ? await buildOutcomeOptionsHTML() : '';
+  const outcomePanelHTML = canClose ? await buildOutcomeOptionsHTML(pmaOptionsHTML, teamOptionsHTML, isClinical) : '';
 
    //build outcome summary for closed incidents
   const myClosedResponse = canReopen
@@ -1333,7 +1333,8 @@ async function buildDetailHTML(inc) {
           src="https://www.openstreetmap.org/export/embed.html?bbox=${incidentLng-0.002},${incidentLat-0.002},${incidentLng+0.002},${incidentLat+0.002}&layer=mapnik&marker=${incidentLat},${incidentLng}">
         </iframe>
       </div>
-      <a href="geo:${incidentLat},${incidentLng}" style="
+      <a href="https://www.google.com/maps/search/?api=1&query=${incidentLat},${incidentLng}" 
+        target="_blank" style="
         display:block;width:100%;padding:11px;border-radius:var(--radius);
         border:1.5px solid var(--blue);color:#1060cc;font-size:13px;
         font-weight:600;text-align:center;text-decoration:none;
@@ -1396,7 +1397,7 @@ async function buildDetailHTML(inc) {
       ${assessmentHTML}
     </div>
 
-    ${canClose ? `
+    ${(canClose ||isEnRoute)? `
     <button id="btn-add-assessment" style="
       width:100%;padding:12px;border-radius:var(--radius);
       border:1px solid var(--blue);color:var(--blue);font-size:12px;
