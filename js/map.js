@@ -108,8 +108,68 @@ async function initMap() {
     maxZoom: 19,
   }).addTo(mapInstance);
 
-  await loadEventGeoLayers();
-  await refreshMapMarkers();
+  const LayerControl = L.Control.extend({
+      onAdd: function() {
+        const div = L.DomUtil.create('div');
+        div.innerHTML = `
+          <div style="background:white;border-radius:8px;padding:4px;
+            box-shadow:0 1px 5px rgba(0,0,0,0.3);display:flex;flex-direction:column;gap:4px;">
+          <button id="btn-toggle-grid" onclick="toggleGridLayer()" style="
+            padding:6px 10px;border-radius:6px;border:none;cursor:pointer;
+            background:#f5f5f5;color:#333;font-size:12px;font-weight:700;">
+            🗂 Griglia
+          </button>
+          <button id="btn-toggle-poi" onclick="togglePoiLayer()" style="
+            padding:6px 10px;border-radius:6px;border:none;cursor:pointer;
+            background:#f5f5f5;color:#333;font-size:12px;font-weight:700;">
+            📍 Punti
+          </button>
+          </div>`;
+        L.DomEvent.disableClickPropagation(div);
+        return div;
+      }
+    });
+    new LayerControl({ position: 'topright' }).addTo(mapInstance);
+
+  const SendPositionControl = L.Control.extend({
+    onAdd: function() {
+      const div = L.DomUtil.create('div');
+      div.innerHTML = `
+        <button id="btn-map-send-position" style="
+          padding:9px 14px;border-radius:var(--radius);
+          border:1.5px solid var(--border-bright);background:white;
+          color:#333;font-size:12px;font-weight:600;
+          font-family:var(--font);cursor:pointer;
+          box-shadow:0 1px 5px rgba(0,0,0,0.3);">
+          📍 Invia posizione
+        </button>`;
+      L.DomEvent.disableClickPropagation(div);
+      return div;
+    }
+  });
+  new SendPositionControl({ position: 'bottomleft' }).addTo(mapInstance);
+
+  const CercaControl = L.Control.extend({
+    onAdd: function() {
+      const div = L.DomUtil.create('div');
+      div.innerHTML = `
+        <button id="btn-map-cerca" style="
+          padding:9px 14px;border-radius:var(--radius);
+          border:1.5px solid var(--blue);background:white;
+          color:#1060cc;font-size:12px;font-weight:700;
+          font-family:var(--font);cursor:pointer;
+          box-shadow:0 1px 5px rgba(0,0,0,0.3);">
+          🔍 Cerca
+        </button>`;
+      L.DomEvent.disableClickPropagation(div);
+      return div;
+    }
+  });
+  new CercaControl({ position: 'bottomright' }).addTo(mapInstance);
+
+    await loadEventGeoLayers();
+    await refreshMapMarkers();
+
 }
 
 async function refreshMapMarkers() {
@@ -320,7 +380,7 @@ async function refreshMapInfoBar() {
     timeEl.textContent = new Date(pos.updated_at)
       .toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
   } else {
-    timeEl.textContent = 'non ancora inviata';
+    timeEl.textContent = 'nd';
   }
 
   // Send position button
@@ -423,13 +483,12 @@ async function loadEventGeoLayers() {
       }).bindPopup(`<strong>${row.label || '—'}</strong>`)
         .addTo(gridLayerGroup);
     });
-    gridLayerGroup.addTo(mapInstance);
     if (data?.length) addGridAxisLabels(data, mapInstance);
   }
 
   const { data: pois } = await db
     .from('event_poi')
-    .select('geom, label')
+    .select('geom, label, poi_type')
     .eq('event_id', STATE.resource.event_id);
 
   if (pois?.length) {
@@ -437,12 +496,10 @@ async function loadEventGeoLayers() {
     pois.forEach(row => {
       if (!row.geom?.coordinates) return;
       const [lng, lat] = row.geom.coordinates;
-      L.circleMarker([lat, lng], {
-        radius: 6, color: '#ffa657', fillColor: '#ffa657', fillOpacity: 0.9, weight: 2,
-      }).bindPopup(`<strong>${row.label || '—'}</strong>`)
+      L.marker([lat, lng], { icon: poiIcon(row.poi_type) })  // ← use poiIcon
+        .bindPopup(`<strong>${row.label || '—'}</strong>${row.poi_type ? `<br><span style="font-size:11px;color:#888">${row.poi_type}</span>` : ''}`)
         .addTo(poiLayerGroup);
     });
-    poiLayerGroup.addTo(mapInstance);
   }
 
 }
@@ -453,11 +510,11 @@ function toggleGridLayer() {
   if (mapInstance.hasLayer(gridLayerGroup)) {
     mapInstance.removeLayer(gridLayerGroup);
     if (gridLabelsLayer) mapInstance.removeLayer(gridLabelsLayer);
-    if (btn) btn.classList.remove('active');
+    if (btn) { btn.style.background = '#f5f5f5'; btn.style.color = '#333'; }
   } else {
     mapInstance.addLayer(gridLayerGroup);
     if (gridLabelsLayer) mapInstance.addLayer(gridLabelsLayer);
-    if (btn) btn.classList.add('active');
+    if (btn) { btn.style.background = 'var(--blue-dim)'; btn.style.color = '#1060cc'; }
   }
 }
 
@@ -466,15 +523,60 @@ function togglePoiLayer() {
   const btn = document.getElementById('btn-toggle-poi');
   if (mapInstance.hasLayer(poiLayerGroup)) {
     mapInstance.removeLayer(poiLayerGroup);
-    if (btn) btn.classList.remove('active');
+    if (btn) { btn.style.background = '#f5f5f5'; btn.style.color = '#333'; }
   } else {
     mapInstance.addLayer(poiLayerGroup);
-    if (btn) btn.classList.add('active');
+    if (btn) { btn.style.background = 'var(--blue-dim)'; btn.style.color = '#1060cc'; }
   }
 }
 
+const POI_ICONS = {
+  PMA: { svg: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="22" height="22" rx="4" fill="#e53935"/>
+    <path d="M12 6v12M6 12h12" stroke="#fff" stroke-width="3.5" stroke-linecap="round"/>
+  </svg>` },
+
+  Campo: { svg: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="22" height="22" rx="4" fill="#2e7d32"/>
+    <ellipse cx="12" cy="12" rx="5" ry="5" fill="none" stroke="#fff" stroke-width="1.5"/>
+    <path d="M7 7l10 10M17 7L7 17" stroke="#fff" stroke-width="1" opacity="0.5"/>
+    <circle cx="12" cy="12" r="2" fill="#fff"/>
+  </svg>` },
+
+  Stadio: { svg: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="22" height="22" rx="4" fill="#1565c0"/>
+    <ellipse cx="12" cy="13" rx="8" ry="5" fill="none" stroke="#fff" stroke-width="1.5"/>
+    <path d="M4 13V9a8 5 0 0116 0v4" stroke="#fff" stroke-width="1.5" fill="none"/>
+    <path d="M4 9c0-2.8 3.6-5 8-5s8 2.2 8 5" stroke="#fff" stroke-width="1" opacity="0.5" fill="none"/>
+  </svg>` },
+
+  utilità: { svg: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="22" height="22" rx="4" fill="#f57c00"/>
+    <path d="M12 4l1.5 4.5H18l-3.75 2.7 1.5 4.5L12 13.2l-3.75 2.5 1.5-4.5L6 8.5h4.5z" fill="#fff"/>
+  </svg>` },
+
+  default: { svg: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="22" height="22" rx="4" fill="#ffa657"/>
+    <circle cx="12" cy="12" r="4" fill="#fff"/>
+  </svg>` },
+};
+
+function poiIcon(poi_type) {
+  const def = POI_ICONS[poi_type] || POI_ICONS.default;
+  const encoded = btoa(unescape(encodeURIComponent(def.svg)));
+  return L.divIcon({
+    className: '',
+    html: `<img src="data:image/svg+xml;base64,${encoded}"
+      style="width:28px;height:28px;border-radius:6px;
+      box-shadow:0 1px 4px rgba(0,0,0,0.4);" />`,
+    iconSize:    [28, 28],
+    iconAnchor:  [14, 14],
+    popupAnchor: [0, -18],
+  });
+}
+
 function addGridAxisLabels(cells, map) {
-  gridLabelsLayer = L.layerGroup().addTo(map);
+  gridLabelsLayer = L.layerGroup();
 
   cells.forEach(row => {
     const geom = typeof row.geom === 'string' ? JSON.parse(row.geom) : row.geom;
@@ -500,6 +602,7 @@ let _cercaGridLayer  = null;
 let _cercaPoiMarker  = null;
 
 async function initCercaPanel() {
+
   const btn   = document.getElementById('btn-map-cerca');
   const panel = document.getElementById('map-cerca-panel');
   if (!btn || !panel) return;
@@ -517,7 +620,12 @@ async function initCercaPanel() {
       .order('label');
 
     const gridSelect = document.getElementById('cerca-grid-select');
+
     if (cells?.length) {
+      cells.sort((a, b) =>
+        a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' })
+      );
+
       gridSelect.innerHTML = '<option value="">— Seleziona zona —</option>' +
         cells.map(c => `<option value="${c.id}">${c.label}</option>`).join('');
 
@@ -543,22 +651,46 @@ async function initCercaPanel() {
     .order('label');
 
   const poiSelect = document.getElementById('cerca-poi-select');
-  if (pois?.length) {
-    poiSelect.innerHTML = '<option value="">— Seleziona punto —</option>' +
-      pois.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
+  const POI_TYPE_ORDER = ['PMA', 'Stadio', 'Campo'];
 
-    poiSelect.addEventListener('change', () => {
-      const poi = pois.find(p => p.id === poiSelect.value);
-      if (!poi?.geom?.coordinates) return;
-      clearCercaLayers();
-      const [lng, lat] = poi.geom.coordinates;
-      _cercaPoiMarker = L.marker([lat, lng])
-        .addTo(mapInstance)
-        .bindPopup(`<strong>${poi.label}</strong>`)
-        .openPopup();
-      mapInstance.setView([lat, lng], 17);
+  if (pois?.length) {
+      pois.sort((a, b) =>
+        a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' })
+      );
+    const groups = {};
+    pois.forEach(p => {
+      const type = p.poi_type || 'Altro';
+      if (!groups[type]) groups[type] = [];
+      groups[type].push(p);
     });
-  }
+
+    const sortedGroups = Object.entries(groups).sort(([a], [b]) => {
+      const ai = POI_TYPE_ORDER.indexOf(a);
+      const bi = POI_TYPE_ORDER.indexOf(b);
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    });
+
+    poiSelect.innerHTML = '<option value="">— Seleziona punto —</option>' +
+        sortedGroups.map(([type, items]) => `
+          <optgroup label="${type}">
+            ${items.map(p => `<option value="${p.id}">${p.label}</option>`).join('')}
+          </optgroup>`
+        ).join('');
+
+      poiSelect.addEventListener('change', () => {
+        const poi = pois.find(p => p.id === poiSelect.value);
+        if (!poi?.geom?.coordinates) return;
+        clearCercaLayers();
+        const [lng, lat] = poi.geom.coordinates;
+        _cercaPoiMarker = L.marker([lat, lng])
+          .addTo(mapInstance)
+          .bindPopup(`<strong>${poi.label}</strong>`)
+          .openPopup();
+        mapInstance.setView([lat, lng], 17);
+      });
+    }
+
+  
 
   // Toggle panel open/close
   btn.addEventListener('click', () => {

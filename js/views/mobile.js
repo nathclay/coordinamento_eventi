@@ -581,9 +581,10 @@ function switchTab(targetId) {
 
   if (targetId === 'panel-map') {
     refreshMapInfoBar();
-    setTimeout(() => {
+    setTimeout(async () => {
       initMap();
       invalidateMap();
+      await refreshMapInfoBar();  
     }, 50);
   }
 }

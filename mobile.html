@@ -237,27 +237,12 @@
           flex-direction:column;
           gap:8px;">
            <!-- Row 1: send position + cerca -->
-          <div style="display:flex;gap:8px;">
-            <button id="btn-map-send-position" style="
-              flex:1;padding:9px 12px;border-radius:var(--radius);
-              border:1.5px solid var(--border-bright);background:var(--bg-card);
-              color:var(--text-primary);font-size:12px;font-weight:600;
-              font-family:var(--font);cursor:pointer;text-align:center;">
-              📍 Invia posizione
-            </button>
-            <button id="btn-map-cerca" style="
-              flex:1;padding:9px 12px;border-radius:var(--radius);
-              border:1.5px solid var(--blue);background:var(--blue-dim);
-              color:#1060cc;font-size:12px;font-weight:700;
-              font-family:var(--font);cursor:pointer;text-align:center;">
-              🔍 Cerca
-            </button>
-          </div>
+
           <!-- Row 2: last location -->
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
             <div id="map-position-label" style="
               font-size:14px;font-weight:600;color:var(--text-secondary);">
-              📍 Ultima posizione inviata alle: <span id="map-position-time" style="color:var(--text-primary);">—</span>
+              📍 Posizione inviata alle: <span id="map-position-time" style="color:var(--text-primary);">—</span>
             </div>
           </div>
           <!-- Row 3: sector (is_grid only) -->
@@ -275,22 +260,6 @@
               style="color:var(--text-primary);">—</span>
           </div>
 
-          <div style="display:flex;gap:8px;">
-            <button id="btn-toggle-grid" onclick="toggleGridLayer()" style="
-              flex:1;padding:7px 12px;border-radius:var(--radius);
-              border:1.5px solid var(--blue);background:var(--blue-dim);
-              color:#1060cc;font-size:12px;font-weight:700;
-              font-family:var(--font);cursor:pointer;text-align:center;">
-              🗂 Griglia
-            </button>
-            <button id="btn-toggle-poi" onclick="togglePoiLayer()" style="
-              flex:1;padding:7px 12px;border-radius:var(--radius);
-              border:1.5px solid var(--border-bright);background:var(--bg-card);
-              color:var(--text-primary);font-size:12px;font-weight:700;
-              font-family:var(--font);cursor:pointer;text-align:center;">
-              📍 Punti di Interesse
-            </button>
-          </div>
           <!-- Row 5: cerca expanded panel (hidden by default) -->
           <div id="map-cerca-panel" style="display:none;flex-direction:column;gap:8px;">
               <div style="display:flex;gap:8px;">
