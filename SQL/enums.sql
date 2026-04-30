@@ -60,3 +60,19 @@ CREATE TYPE incident_type_enum AS ENUM (
   'other'
 );
 
+
+CREATE TYPE competenza_enum AS ENUM ('SOP', 'Sala_Roma', 'SOR');
+
+CREATE TYPE personnel_role_enum AS ENUM (
+  'autista', 'infermiere', 'medico', 'soccorritore',
+  'coordinatore', 'volontario_generico', 'opem',
+  'tlc', 'logista', 'sep', 'droni'
+);
+
+CREATE TYPE personnel_status_enum AS ENUM (
+  'scheduled', 'activated', 'cancelled', 'no_show'
+);
+
+CREATE TYPE partenza_enum AS ENUM (
+  'sala_roma', 'sul_posto'
+);

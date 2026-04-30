@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dispositivo — CGE</title>
+  <link rel="stylesheet" href="css/dispositivo.css" />
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="screen-login" class="screen hidden">
+  <div class="login-card">
+    <div class="login-logo">🚑</div>
+    <h1 class="login-title">Dispositivo</h1>
+    <p class="login-subtitle">Pianificazione personale — CGE</p>
+    <div id="login-error" class="error-msg"></div>
+    <input type="email"    id="login-email"    placeholder="Email"    autocomplete="email" />
+    <input type="password" id="login-password" placeholder="Password" autocomplete="current-password" />
+    <button id="btn-login" class="btn-primary">Accedi</button>
+  </div>
+</div>
+
+<!-- EVENT SELECT -->
+<div id="screen-event" class="screen hidden">
+  <div class="event-select-card">
+    <h2>Seleziona Evento</h2>
+    <div id="event-list" class="event-list"></div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="screen-main" class="screen hidden">
+  <header class="disp-header">
+    <div class="header-left">
+      <span class="header-logo">🚑</span>
+      <span class="header-event-name" id="header-event-name">—</span>
+    </div>
+    <div class="header-right">
+      <span class="header-user" id="header-user"></span>
+      <button class="btn-secondary btn-sm" id="btn-logout">Esci</button>
+    </div>
+  </header>
+
+  <div class="disp-body">
+    <nav class="disp-sidebar" id="disp-sidebar">
+      <div class="sidebar-nav">
+        <button class="sidebar-item active" data-page="ricerca">
+          <span class="sidebar-icon">🔍</span>
+          <span class="sidebar-label">Ricerca personale</span>
+        </button>
+        <button class="sidebar-item" data-page="attivazioni">
+          <span class="sidebar-icon">✅</span>
+          <span class="sidebar-label">Attivazioni</span>
+        </button>
+      </div>
+      <div class="sidebar-bottom">
+        <button class="sidebar-item" data-page="impostazioni">
+          <span class="sidebar-icon">⚙️</span>
+          <span class="sidebar-label">Impostazioni</span>
+        </button>
+      </div>
+    </nav>
+    <div id="page-content" class="page-content">
+      <div class="loading-spinner"><div class="spinner"></div><span>Caricamento...</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     MODAL: TWO-STEP ASSIGNMENT
+     Used for both new assignments and editing existing personnel.
+============================================================ -->
+<div id="modal-assign" class="modal-overlay hidden">
+  <div class="modal-card modal-assign-card">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="assign-modal-title">Aggiungi personale</div>
+        <div class="step-indicator" id="assign-step-indicator">
+          <span class="step active">1 · Anagrafica</span>
+          <span class="step-arrow">›</span>
+          <span class="step">2 · Assegnazione</span>
+        </div>
+      </div>
+      <button class="modal-close" data-modal="modal-assign">✕</button>
+    </div>
+    <div class="modal-body" id="assign-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn-danger btn-sm" id="assign-delete" style="display:none">Rimuovi</button>
+      <button class="btn-secondary"     id="assign-back"   style="display:none">‹ Indietro</button>
+      <button class="btn-secondary"     data-modal="modal-assign">Annulla</button>
+      <button class="btn-primary"       id="assign-next">Avanti ›</button>
+      <button class="btn-primary"       id="assign-confirm" style="display:none">Conferma</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: SEARCH -->
+<div id="modal-search" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span class="modal-title">Cerca volontario</span>
+      <button class="modal-close" data-modal="modal-search">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label>Cognome</label>
+          <input type="text" id="search-surname" placeholder="Rossi" autocomplete="off" />
+        </div>
+        <div class="form-group">
+          <label>Nome</label>
+          <input type="text" id="search-name" placeholder="Mario" autocomplete="off" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Codice Fiscale</label>
+          <input type="text" id="search-cf" placeholder="RSSMRA80A01H501U"
+            autocomplete="off" style="text-transform:uppercase" />
+        </div>
+        <div class="form-group">
+          <label>Telefono</label>
+          <input type="text" id="search-phone" placeholder="3331234567" autocomplete="off" />
+        </div>
+      </div>
+      <div id="search-results" class="search-results"></div>
+      <button class="btn-secondary" style="width:100%;margin-top:10px" id="btn-new-anagrafica">
+        + Crea nuovo volontario
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: ADD RESOURCE TO SESSION -->
+<div id="modal-resource-day" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span class="modal-title">Aggiungi risorsa alla sessione</span>
+      <button class="modal-close" data-modal="modal-resource-day">✕</button>
+    </div>
+    <div class="modal-body" id="resource-day-modal-body">
+      <div class="loading-inline">Caricamento...</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" data-modal="modal-resource-day">Annulla</button>
+      <button class="btn-primary"   id="resource-day-modal-save">Aggiungi</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: IMPORT -->
+<div id="modal-import" class="modal-overlay hidden">
+  <div class="modal-card modal-wide">
+    <div class="modal-header">
+      <span class="modal-title">Importa anagrafica</span>
+      <button class="modal-close" data-modal="modal-import">✕</button>
+    </div>
+    <div class="modal-body" id="import-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" data-modal="modal-import">Annulla</button>
+      <button class="btn-primary"   id="import-modal-confirm" style="display:none">Importa</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<script src="js/supabase.js"></script>
+<script src="js/rpc-dispositivo.js"></script>
+<script src="js/dispositivo.js"></script>
+</body>
+</html>

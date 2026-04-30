@@ -24,6 +24,10 @@
    Does NOT include patient_assessments (too heavy for polling).
 ---------------------------------------------------------------- */
 async function fetchPCAIncidents(eventId) {
+  const session = PCA.event?.current_session || 1;  // ← add this
+
+  console.log('[fetch] fetchPCAIncidents session:', session, 'eventId:', eventId);
+
   const { data, error } = await db
     .from('incidents')
     .select(`
@@ -36,7 +40,7 @@ async function fetchPCAIncidents(eventId) {
       )
     `)
     .eq('event_id', eventId)
-    .eq('session', PCA.event?.current_session || 1)
+    .eq('session', session)
     .not('status', 'in', '("cancelled")')
     .order('updated_at', { ascending: false });
 
@@ -48,7 +52,8 @@ async function fetchPCAIncidents(eventId) {
    Full query including assessments and patient_gender.
    Heavier — only called when user navigates to Soccorsi page.
 ---------------------------------------------------------------- */
-async function fetchSoccorsiIncidents(eventId, session = null) {
+async function fetchSoccorsiIncidents(eventId, session) {
+  const s = session !== undefined ? session : (PCA.event?.current_session ?? 1);
   let query = db
     .from('incidents')
     .select(`
@@ -71,7 +76,7 @@ async function fetchSoccorsiIncidents(eventId, session = null) {
     .not('status', 'eq', 'cancelled')
     .order('created_at', { ascending: false });
 
-  if (session !== null) query = query.eq('session', session);
+  if (s !== null) query = query.eq('session', s);
 
   const { data, error } = await query;
   if (error) { console.error('fetchSoccorsiIncidents:', error); return []; }
@@ -268,7 +273,9 @@ async function fetchResourceHistory(resourceId) {
    Moved here to centralise all DB access.
 ================================================================ */
 
-async function fetchPCAPMAIncoming(pmaId, session = null) {
+async function fetchPCAPMAIncoming(pmaId, session) {
+  const s = session !== undefined ? session : (PCA.event?.current_session ?? 1);
+
   const { data, error } = await db
     .from('incident_responses')
     .select(`
@@ -291,11 +298,13 @@ async function fetchPCAPMAIncoming(pmaId, session = null) {
 
   if (error) { console.error('fetchPCAPMAIncoming:', error); return []; }
   const rows = data || [];
-  if (session !== null) return rows.filter(r => r.incidents?.session === session);
+  if (s !== null) return rows.filter(r => r.incidents?.session === s);
   return rows;
 }
 
-async function fetchPCAPMAActive(pmaId, session = null) {
+async function fetchPCAPMAActive(pmaId, session) {
+  const s = session !== undefined ? session : (PCA.event?.current_session ?? 1);
+
   const { data, error } = await db
     .from('incident_responses')
     .select(`
@@ -317,11 +326,12 @@ async function fetchPCAPMAActive(pmaId, session = null) {
 
   if (error) { console.error('fetchPCAPMAIncoming:', error); return []; }
   const rows = data || [];
-  if (session !== null) return rows.filter(r => r.incidents?.session === session);
+  if (s !== null) return rows.filter(r => r.incidents?.session === s);
   return rows;
 }
 
-async function fetchPCAPMAClosed(pmaId, session = null) {
+async function fetchPCAPMAClosed(pmaId, session) {
+  const s = session !== undefined ? session : (PCA.event?.current_session ?? 1);
   const { data, error } = await db
     .from('incident_responses')
     .select(`
@@ -343,7 +353,7 @@ async function fetchPCAPMAClosed(pmaId, session = null) {
 
   if (error) { console.error('fetchPCAPMAClosed:', error); return []; }
   const rows = data || [];
-  if (session !== null) return rows.filter(r => r.incidents?.session === session);
+  if (s !== null) return rows.filter(r => r.incidents?.session === s);
   return rows;
 }
 
@@ -396,6 +406,8 @@ async function fetchPCAStorico(incidentId) {
 ================================================================ */
 
 async function fetchHospitalResponses(eventId, session = null) {
+  const s = session !== undefined ? session : (PCA.event?.current_session ?? 1);
+
   const { data, error } = await db
     .from('incident_responses')
     .select(`
@@ -414,7 +426,7 @@ async function fetchHospitalResponses(eventId, session = null) {
 
   if (error) { console.error('fetchHospitalResponses:', error); return []; }
   const rows = data || [];
-  if (session !== null) return rows.filter(r => r.incidents?.session === session);
+  if (s !== null) return rows.filter(r => r.incidents?.session === s);
   return rows;
 
 }
@@ -452,94 +464,97 @@ async function fetchHospitalAssessments(incidentIds) {
    geom, targa, schedule, email, coordinator.
 ---------------------------------------------------------------- */
 async function fetchDispositivoResources(eventId) {
+  const session = PCA.event?.current_session || 1;
   const { data, error } = await db
-    .from('resources')
+    .from('resource_days')
     .select(`
-      id, resource, resource_type, geom, notes,
-      user_email, targa, start_time, end_time,
-      coordinator:coordinator_id(resource)
+      id, session, notes,
+      resources!inner(
+        id, resource, resource_type, geom, notes,
+        user_email, targa, start_time, end_time,
+        coordinator:coordinator_id(resource)
+      )
     `)
     .eq('event_id', eventId)
-    .order('resource');
- 
+    .eq('session', session)
+    .order('resources(resource)');
+
   if (error) { console.error('fetchDispositivoResources:', error); return []; }
-  return data || [];
+  // Flatten: attach resource_day_id onto the resource object for convenience
+  return (data || []).map(rd => ({
+    ...rd.resources,
+    resource_day_id: rd.id,
+  }));
 }
+
  
 /* ── Full personnel list for dispositivo page ──────────────────
    All personnel for the event, ordered by surname.
 ---------------------------------------------------------------- */
 async function fetchDispositivoPersonnel(eventId) {
+  const session = PCA.event?.current_session || 1;
   const { data, error } = await db
     .from('personnel')
     .select(`
-      id, name, surname, comitato, number,
-      qualifications, role, resource_fk:resource, present
+      id, role, status, notes, scheduled_start, scheduled_end,
+      anagrafica(id, name, surname, comitato, number, qualifications, competenza_attivazione),
+      resource_days!inner(id, session, resource_id,
+        resources!resource_days_resource_id_fkey(id, resource, resource_type)
+      )
     `)
     .eq('event_id', eventId)
-    .order('surname');
- 
+    .eq('resource_days.session', session)
+    .order('anagrafica(surname)');
+
   if (error) { console.error('fetchDispositivoPersonnel:', error); return []; }
   return data || [];
 }
- 
-/* ── Lightweight resource list for person modal dropdown ───────
-   Only id, resource name and type — no joins needed.
----------------------------------------------------------------- */
+
+async function fetchPersonnelById(personnelId) {
+  const { data, error } = await db
+    .from('personnel')
+    .select(`
+      id, role, status, notes, scheduled_start, scheduled_end,
+      anagrafica(id, name, surname, comitato, number, qualifications, competenza_attivazione),
+      resource_days(id, session, resource_id,
+        resources!resource_days_resource_id_fkey(id, resource, resource_type)
+      )
+    `)
+    .eq('id', personnelId)
+    .single();
+
+  if (error) { console.error('fetchPersonnelById:', error); return null; }
+  return data;
+}
+
+async function updatePersonnelStatus(personnelId, status) {
+  const { error } = await db
+    .from('personnel')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', personnelId);
+  if (error) { console.error('updatePersonnelStatus:', error); return false; }
+  return true;
+}
+
+async function removePersonnel(personnelId) {
+  const { error } = await db
+    .from('personnel')
+    .delete()
+    .eq('id', personnelId);
+  if (error) { console.error('removePersonnel:', error); return false; }
+  return true;
+}
+
 async function fetchDispResourceDropdown(eventId) {
   const { data, error } = await db
     .from('resources')
     .select('id, resource, resource_type')
     .eq('event_id', eventId)
     .order('resource');
- 
   if (error) { console.error('fetchDispResourceDropdown:', error); return []; }
   return data || [];
 }
- 
-/* ── Single personnel fetch for edit modal ─────────────────────*/
-async function fetchPersonnelById(personnelId) {
-  const { data, error } = await db
-    .from('personnel')
-    .select('*')
-    .eq('id', personnelId)
-    .single();
- 
-  if (error) { console.error('fetchPersonnelById:', error); return null; }
-  return data;
-}
- 
-/* ── Personnel upsert ──────────────────────────────────────────
-   If personnelId is provided → update, otherwise → insert.
-   Returns { ok, message? }
----------------------------------------------------------------- */
-async function upsertPersonnel(personnelId, payload, eventId) {
-  let error;
-  if (personnelId) {
-    ({ error } = await db
-      .from('personnel')
-      .update(payload)
-      .eq('id', personnelId));
-  } else {
-    ({ error } = await db
-      .from('personnel')
-      .insert({ ...payload, event_id: eventId }));
-  }
- 
-  if (error) { console.error('upsertPersonnel:', error); return { ok: false, message: error.message }; }
-  return { ok: true };
-}
- 
-/* ── Personnel delete ──────────────────────────────────────────*/
-async function removePersonnel(personnelId) {
-  const { error } = await db
-    .from('personnel')
-    .delete()
-    .eq('id', personnelId);
- 
-  if (error) { console.error('removePersonnel:', error); return false; }
-  return true;
-}
+
  
 /* ── Resource detail update ────────────────────────────────────
    Used by saveResource in the resource edit modal.

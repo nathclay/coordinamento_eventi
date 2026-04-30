@@ -42,6 +42,9 @@ async function navigateTo(page) {
     content.innerHTML = '';
     content.appendChild(_workspace);
     if (PCA.map) PCA.map.invalidateSize();
+    loadAllIncidents();
+    loadAllResources();
+
     return;
   }
 

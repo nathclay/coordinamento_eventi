@@ -311,3 +311,17 @@ BEGIN   -- Only care when outcome changes
 END;
 $$ LANGUAGE plpgsql;
 
+
+CREATE OR REPLACE FUNCTION set_audit_fields()
+RETURNS TRIGGER
+SECURITY DEFINER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.created_by = auth.uid();
+  END IF;
+  NEW.updated_by = auth.uid();
+  RETURN NEW;
+END;
+$$;

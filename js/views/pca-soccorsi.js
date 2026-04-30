@@ -120,7 +120,8 @@ function sessionLabel(sessionNum) {
 ================================================================ */
 let _soccorsiSession = null;
 
-async function renderSoccorsiTables(filterSession = null) {
+async function renderSoccorsiTables(filterSession) {
+  if (filterSession !== undefined) _soccorsiSession = filterSession;  
   const body = document.getElementById('soccorsi-body');
   if (!body) return;
 
@@ -130,7 +131,7 @@ async function renderSoccorsiTables(filterSession = null) {
 
   const incidents = await fetchSoccorsiIncidents(
     PCA.eventId,
-    _soccorsiSession === -1 ? null : session
+    session === -1 ? null : session
   );
 
   const updatedEl = document.getElementById('soccorsi-updated');

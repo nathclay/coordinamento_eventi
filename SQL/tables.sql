@@ -5,6 +5,8 @@ CREATE TABLE events (
   description TEXT,
   start_time TIMESTAMPTZ,
   end_time TIMESTAMPTZ,
+  start_date DATE,
+  end_date DATE,
   area geometry(POLYGON, 4326),
   center_lat NUMERIC,
   center_lng NUMERIC,
@@ -20,28 +22,85 @@ CREATE TABLE events (
 );
 ALTER TABLE events ENABLE ROW LEVEL SECURITY;
 
+-- Master volunteer registry (event-independent)
+CREATE TABLE anagrafica (
+  id                      UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  name                    TEXT NOT NULL,
+  surname                 TEXT NOT NULL,
+  cf                      TEXT, 
+  comitato                TEXT,
+  number                  TEXT,
+  email                   TEXT, 
+  qualifications          TEXT,
+  ICE TEXT, 
+  allergies TEXT,
+  competenza_attivazione  competenza_enum NOT NULL,
+  created_at              TIMESTAMPTZ DEFAULT now(),
+  created_by              UUID REFERENCES auth.users(id),
+  updated_by              UUID REFERENCES auth.users(id),
+  updated_at              TIMESTAMPTZ DEFAULT now()
+);
+ALTER TABLE anagrafica              ENABLE ROW LEVEL SECURITY;
+
+-- Role requirements per resource type
+-- Defines what "no holes" means for each type
+CREATE TABLE resource_type_requirements (
+  id            UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  resource_type type_enum NOT NULL,
+  role          personnel_role_enum NOT NULL,
+  count         INTEGER NOT NULL DEFAULT 1,
+  UNIQUE (resource_type, role)
+);
+ALTER TABLE resource_type_requirements ENABLE ROW LEVEL SECURITY;
+
+-- A resource on a specific day
+CREATE TABLE resource_days (
+  id          UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  resource_id UUID REFERENCES resources(id) ON DELETE CASCADE NOT NULL,
+  event_id    UUID REFERENCES events(id) ON DELETE CASCADE NOT NULL,
+  session     INTEGER NOT NULL,
+  date        DATE NOT NULL,
+  start_time TIMESTAMPTZ,
+  end_time TIMESTAMPTZ,
+  notes       TEXT,
+  created_at  TIMESTAMPTZ DEFAULT now(),
+  created_by  UUID REFERENCES auth.users(id),
+  updated_by  UUID REFERENCES auth.users(id),
+  updated_at  TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (resource_id, session)
+);
+ALTER TABLE resource_days           ENABLE ROW LEVEL SECURITY;
+
 CREATE TABLE personnel (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   event_id uuid REFERENCES events(id) NOT NULL,
-  name TEXT NOT NULL,
-  surname TEXT NOT NULL,
-  cf TEXT, -- codice fiscale,
-  comitato TEXT, -- comitato di appartenenza
-  number bigint, -- phone number
-  email TEXT,
-  qualifications TEXT,
-  role TEXT, -- e.g. coordinator, medic, volunteer, etc
-  ICE TEXT, -- in case of emergency, contact info
-  allergies TEXT,
-  activation_protocols TEXT,
-  resource uuid REFERENCES resources(id), -- if this person is assigned to a specific resource, otherwise null
-  checkin_time TIMESTAMPTZ, -- when they checked in for the event
-  checkout_time TIMESTAMPTZ, -- when they checked out for the event
-  present BOOL DEFAULT null, --
+  anagrafica_id    UUID REFERENCES anagrafica(id) ON DELETE RESTRICT NOT NULL,
+  resource_day_id  UUID REFERENCES resource_days(id) ON DELETE CASCADE NOT NULL,
+  role personnel_role_enum,
+  mandata_comunicazione BOOL,
+  time_comunicazione TIMESTAMPTZ,
+  notes_comunicazione TEXT,
+  status personnel_status_enum NOT NULL DEFAULT 'scheduled',
+  competenza_attivazione competenza_enum, --optional override for activation competence, if different from the one in anagrafica
+  mandata_attivazione BOOL,
+  activation_protocol TEXT,
+  time_activation_protocol TIMESTAMPTZ,
+  notes_activation_protocol TEXT,
+  partenza partenza_enum,
+  scheduled_start  TIMESTAMPTZ,
+  scheduled_end    TIMESTAMPTZ,
+  actual_start     TIMESTAMPTZ,
+  actual_end       TIMESTAMPTZ,
+  notes            TEXT,
   created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
-  updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
+  updated_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+  created_by UUID REFERENCES auth.users(id),
+  updated_by UUID REFERENCES auth.users(id) 
 );
 ALTER TABLE personnel ENABLE ROW LEVEL SECURITY;
+CREATE INDEX idx_personnel_event      ON personnel (event_id);
+CREATE INDEX idx_personnel_anagrafica ON personnel (anagrafica_id);
+CREATE INDEX idx_personnel_resday     ON personnel (resource_day_id);
 
 --Radio channels table: all of the radio channels used for each event
 CREATE TABLE event_radio_channels(

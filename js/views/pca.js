@@ -50,6 +50,9 @@ async function loadPCAView() {
   PCA.eventId  = event?.id || resource?.event_id;
   PCA.operator = STATE.personnel; // ← picks up cached personnel too
 
+  console.log('[boot] PCA.event:', PCA.event);
+  console.log('[boot] current_session:', PCA.event?.current_session);
+
   // Header
   document.getElementById('header-event-name').textContent =
     event?.name?.toUpperCase() || 'EVENTO';
@@ -126,17 +129,30 @@ function startClocks(startTime) {
 
 function subscribePCA() {
   if (!PCA.eventId) return;
-  db.channel(`pca-${PCA.eventId}`)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents',
-      filter: `event_id=eq.${PCA.eventId}` }, () => scheduleIncidentRefresh())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'incident_responses',
-      filter: `event_id=eq.${PCA.eventId}` }, () => scheduleIncidentRefresh())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'resources_current_status',
-      filter: `event_id=eq.${PCA.eventId}` }, () => scheduleResourceRefresh())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'personnel',
-      filter: `event_id=eq.${PCA.eventId}` }, () => scheduleDispositivoRefresh())
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'resources',
-      filter: `event_id=eq.${PCA.eventId}` }, () => scheduleDispositivoRefresh())
+
+  db.channel('pca-incidents')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' },
+      () => { console.log('[rt] incidents'); scheduleIncidentRefresh(); })
+    .subscribe();
+
+  db.channel('pca-responses')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'incident_responses' },
+      () => { console.log('[rt] responses'); scheduleIncidentRefresh(); })
+    .subscribe();
+
+  db.channel('pca-locations')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'resources_current_status' },
+      (payload) => { console.log('[rt] location fired', payload); scheduleResourceRefresh(); })
+    .subscribe((status, err) => console.log('[rt] locations status:', status, err ?? ''));
+
+  db.channel('pca-resources')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'resources' },
+      () => scheduleDispositivoRefresh())
+    .subscribe();
+
+  db.channel('pca-personnel')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'personnel' },
+      () => scheduleDispositivoRefresh())
     .subscribe();
 }
 
@@ -273,12 +289,12 @@ function addGridAxisLabels(cells, map) {
   // Unique columns by longitude, sorted west→east → A, B, C...
   const uniqueLngs = [...new Set(
     cellData.map(c => Math.round(c.lng / TOLERANCE) * TOLERANCE)
-  )].sort((a, b) => a - b);
+  )].sort((a, b) => b - a);
 
   // Unique rows by latitude, sorted north→south → 1, 2, 3...
   const uniqueLats = [...new Set(
     cellData.map(c => Math.round(c.lat / TOLERANCE) * TOLERANCE)
-  )].sort((a, b) => b - a);
+  )].sort((a, b) => a - b);
 
   const gridNorth = Math.max(...cellData.map(c => c.north));
   const gridWest  = Math.min(...cellData.map(c => c.west));
@@ -340,7 +356,7 @@ async function loadGeoLayers() {
 
     const layer = buildGeoLayer(def, data);
     PCA.geoLayers[def.key] = layer;
-    if (def.key === 'grid') addGridAxisLabels(data, PCA.map);  
+    if (def.key === 'grid') addGridAxisLabels(data, layer);  
 
     const color = GEO_STYLES[def.key]?.color || '#fff';
     const row = document.createElement('div');
@@ -790,8 +806,11 @@ function isPMAOnly(incident) {
 async function loadAllIncidents() {
   if (!document.getElementById('list-active-incidents')) return;
     const data = await fetchPCAIncidents(PCA.eventId);
+    console.log('[incidents] loaded:', data?.length, 'session:', PCA.event?.current_session);
+
     PCA.allIncidents = data.filter(i => !isPMAOnly(i));
- 
+
+
   renderIncidentPanels();
   updateHeaderStats();
   PCA.allIncidents.forEach(i => { 
@@ -1525,7 +1544,8 @@ async function loadAllResources() {
   if (!document.getElementById('list-all-resources')) return;
     const data = await fetchPCAResources(PCA.eventId);
     PCA.allResources = data;
- 
+   console.log('[fetch] resources returned:', data?.length, data);
+
   const pmas   = PCA.allResources.filter(r => r.resource_type === 'PMA');
   const others = PCA.allResources.filter(r => !['PMA', 'PCA', 'LDC'].includes(r.resource_type)); 
   

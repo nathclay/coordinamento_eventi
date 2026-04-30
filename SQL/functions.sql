@@ -783,6 +783,15 @@ AS $$
   );
 $$;
 
+CREATE OR REPLACE FUNCTION get_user_email(p_user_id UUID)
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT email FROM auth.users WHERE id = p_user_id;
+$$;
 
 
 

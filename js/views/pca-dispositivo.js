@@ -11,6 +11,26 @@
                openResourcesImportModal)
 ================================================================ */
 
+const PERSONNEL_ROLES = [
+  'autista', 'infermiere', 'medico', 'soccorritore',
+  'coordinatore', 'volontario_generico', 'opem',
+  'tlc', 'logista', 'sep', 'droni'
+];
+
+const STATUS_COLORS = {
+  activated: 'rgba(63,185,80,0.22)',
+  cancelled:  'rgba(226,75,74,0.22)',
+  no_show:    'rgba(72,79,88,0.35)',
+  scheduled:  'transparent',
+};
+
+const STATUS_LABELS = {
+  activated: 'Attivato',
+  cancelled:  'Annullato',
+  no_show:    'Assente',
+  scheduled:  'Pianificato',
+};
+
 /* ================================================================
    MOUNT & RENDER
    mountDispositivo  — builds page shell with import buttons,
@@ -19,116 +39,80 @@
                        both by type/resource, renders all sections.
 ================================================================ */
 async function mountDispositivo(container) {
-    container.innerHTML = `
+  container.innerHTML = `
     <div class="disp-page">
-        <div class="disp-header">
+      <div class="disp-header">
         <h2 class="disp-title">Dispositivo</h2>
-        <div style="display:flex;gap:8px;">
-            <button class="btn-secondary" onclick="openPersonnelImportModal()"
-            style="font-size:11px;padding:5px 12px;">↑ Importa personale</button>
-            <button class="btn-secondary" onclick="openResourcesImportModal()"
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="btn-secondary" onclick="openResourcesImportModal()"
             style="font-size:11px;padding:5px 12px;">↑ Importa risorse</button>
+          <span style="font-size:11px;color:var(--text-secondary);">
+            Gestione personale → <strong>dispositivo.html</strong>
+          </span>
         </div>
         <span class="disp-updated" id="disp-updated">—</span>
-        </div>
-        <div class="disp-body" id="disp-body">
+      </div>
+      <div class="disp-body" id="disp-body">
         <div class="empty-state">Caricamento...</div>
-        </div>
+      </div>
     </div>`;
 
   await renderDispositivo();
 }
 
+
 async function renderDispositivo() {
-    const body = document.getElementById('disp-body');
-    if (!body) return;
+  const body = document.getElementById('disp-body');
+  if (!body) return;
 
-    // Fetch all resources for this event (excluding PCA)
-    const [allResources, allPersonnel] = await Promise.all([
-      fetchDispositivoResources(PCA.eventId),
-      fetchDispositivoPersonnel(PCA.eventId),
-    ]);
-    if (!allResources.length && !allPersonnel.length) {
-      body.innerHTML = '<div class="empty-state">Errore nel caricamento</div>'; return;
-    }
+  const [allResources, allPersonnel] = await Promise.all([
+    fetchDispositivoResources(PCA.eventId),
+    fetchDispositivoPersonnel(PCA.eventId),
+  ]);
 
-    const updatedEl = document.getElementById('disp-updated');
-    if (updatedEl) updatedEl.textContent =
-        `Aggiornato alle ${formatTime(new Date().toISOString())}`;
+  const updatedEl = document.getElementById('disp-updated');
+  if (updatedEl) updatedEl.textContent =
+    `Aggiornato alle ${formatTime(new Date().toISOString())}`;
 
-    _allDispResources = allResources;
-    // Group personnel by resource_id
-    const byResource = {};
+  _allDispResources = allResources;
 
-    allPersonnel.forEach(p => {
-    const key = p.resource_fk || '__unassigned__';
+  // Group personnel by resource_id (via resource_days join)
+  const byResource = {};
+  allPersonnel.forEach(p => {
+    const key = p.resource_days?.resource_id || '__unassigned__';
     if (!byResource[key]) byResource[key] = [];
     byResource[key].push(p);
-    });
+  });
 
-    // Group resources by type
-    const byType = {};
-    allResources.forEach(r => {
-        if (!byType[r.resource_type]) byType[r.resource_type] = [];
-        byType[r.resource_type].push(r);
-    });
+  // Group resources by type
+  const byType = {};
+  allResources.forEach(r => {
+    if (!byType[r.resource_type]) byType[r.resource_type] = [];
+    byType[r.resource_type].push(r);
+  });
 
-    const sections = [];
+  const sections = [];
 
-    // ASM + MM together
-    const asmResources = [
-    ...(byType['ASM'] || []),
-    ...(byType['MM']  || []),
-    ];
-    if (asmResources.length > 0)
-    sections.push(buildAmbulanceSection('ASM / MM', asmResources, byResource, 2, true));
+  const asmResources = [...(byType['ASM'] || []), ...(byType['MM'] || [])];
+  if (asmResources.length) sections.push(buildAmbulanceSection('ASM / MM', asmResources, byResource));
 
-    // ASI
-    if (byType['ASI']?.length > 0)
-    sections.push(buildAmbulanceSection('ASI', byType['ASI'], byResource, 2, true));
+  if (byType['ASI']?.length) sections.push(buildAmbulanceSection('ASI', byType['ASI'], byResource));
+  if (byType['PMA']?.length) sections.push(buildAmbulanceSection('PMA', byType['PMA'], byResource, false));
+  if (byType['SAP']?.length) sections.push(buildSAPSection_labeled('SAP', byType['SAP'], byResource));
+  if (byType['BICI']?.length) sections.push(buildSAPSection_labeled('BICI', byType['BICI'], byResource));
 
-    // PMA — minSocc 3, no targa
-    if (byType['PMA']?.length > 0)
-    sections.push(buildAmbulanceSection('PMA', byType['PMA'], byResource, 3, false));
+  const ldcResources = [...(byType['LDC'] || []), ...(byType['PCA'] || [])];
+  if (ldcResources.length) sections.push(buildLDCSection(ldcResources, byResource));
 
-    // SAP
-    if (byType['SAP']?.length > 0)
-    sections.push(buildSAPSection_labeled('SAP', byType['SAP'], byResource));
+  const unassigned = byResource['__unassigned__'] || [];
+  if (unassigned.length) sections.push(buildPoolSection('Non assegnati', unassigned));
 
-    // BICI
-    if (byType['BICI']?.length > 0)
-    sections.push(buildSAPSection_labeled('BICI', byType['BICI'], byResource));
+  body.innerHTML = sections.join('') ||
+    '<div class="empty-state">Nessun personale per la sessione corrente</div>';
 
-    // LDC + PCA together
-    const ldcResources = [
-    ...(byType['LDC'] || []),
-    ...(byType['PCA'] || []),
-    ];
-    if (ldcResources.length > 0)
-    sections.push(buildLDCSection(ldcResources, byResource, 'LDC — Coordinatori / PCA'));
-
-    // ALTRO
-    if (byType['ALTRO']?.length > 0) {
-    const altroPeople = byType['ALTRO'].flatMap(r => byResource[r.id] || []);
-    sections.push(buildPoolSection('Altro', altroPeople));
-    }
-
-    // Non assegnato
-    const unassigned = byResource['__unassigned__'] || [];
-    sections.push(buildPoolSection('Non assegnati', unassigned));
-
-    body.innerHTML = sections.join('') ||
-      '<div class="empty-state">Nessun personale registrato</div>';
-
-    document.querySelectorAll('.disp-person[data-present="true"]').forEach(el => {
-      el.closest('td')?.classList.add('td-present');
-    });
-    document.querySelectorAll('.disp-person[data-present="false"]').forEach(el => {
-      el.closest('td')?.classList.add('td-absent');
-    });
-
-    initDispResize();
+  initDispResize();
 }
+
 
 /* ================================================================
    RESOURCE INFO CELLS
@@ -292,133 +276,49 @@ function initDispResize() {
    buildSection            — shared section wrapper with header,
                              badge count, and scrollable table.
 ================================================================ */
-function buildAmbulanceSection(type, resources, byResource, minSocc = 2, includeTarga = true) {
-    // Calculate maxSocc and maxExtras across all resources
-    let maxSocc   = minSocc;
-    let maxExtras = 0;
-
-    resources.forEach(r => {
-        const crew = byResource[r.id] || [];
-        const socc = crew.filter(p => p.role?.toLowerCase() === 'soccorritore');
-        const placed = new Set([
-        crew.find(p => p.role?.toLowerCase() === 'autista')?.id,
-        ...socc.map(p => p.id),
-        crew.find(p => p.role?.toLowerCase() === 'infermiere')?.id,
-        crew.find(p => p.role?.toLowerCase() === 'medico')?.id,
-        ].filter(Boolean));
-        const extras = crew.filter(p => !placed.has(p.id));
-        maxSocc   = Math.max(maxSocc, socc.length);
-        maxExtras = Math.max(maxExtras, extras.length);
-    });
-
-    const soccHeaders  = Array.from({ length: maxSocc },
-        () => `<th>Soccorritore</th>`).join('');
-    const extraHeaders = Array.from({ length: maxExtras },
-        () => `<th>Altro</th>`).join('');
-
-    const headers = `
-        <th class="disp-col-resource">Risorsa</th>
-        ${buildResourceInfoHeaders(includeTarga)}
-        <th>Autista</th>
-        ${soccHeaders}
-        <th>Infermiere</th>
-        <th>Medico</th>
-        ${extraHeaders}`;
-
-    const rows = resources.map(r => {
-    const crew = byResource[r.id] || [];
-
-    const autista    = crew.find(p => p.role?.toLowerCase() === 'autista') || null;
-    const socc       = crew.filter(p => p.role?.toLowerCase() === 'soccorritore');
-    const infermiere = crew.find(p => p.role?.toLowerCase() === 'infermiere') || null;
-    const medico     = crew.find(p => p.role?.toLowerCase() === 'medico') || null;
-
-    const placed = new Set([
-      autista?.id, ...socc.map(p => p.id),
-      infermiere?.id, medico?.id,
-    ].filter(Boolean));
-    const extras = crew.filter(p => !placed.has(p.id));
-
-    const soccCells  = Array.from({ length: maxSocc }, (_, i) =>
-      `<td>${buildPersonCard(socc[i] || null, r.id, 'Soccorritore')}</td>`).join('');
-    const extraCells = Array.from({ length: maxExtras }, (_, i) =>
-    `<td>${buildPersonCard(extras[i] || null, r.id, 'Altro')}</td>`).join('');
-
-    return `<tr>
-    <td class="disp-resource-name">
-    ${r.resource}
-    <button class="disp-resource-edit-btn" 
-        onclick="openResourceModal('${r.id}')"
-        title="Modifica risorsa">✎</button>
-    </td>
-    ${buildResourceInfoCells(r, includeTarga)}
-    <td>${buildPersonCard(autista,    r.id, 'Autista')}</td>
-    ${soccCells}
-    <td>${buildPersonCard(infermiere, r.id, 'Infermiere')}</td>
-    <td>${buildPersonCard(medico,     r.id, 'Medico')}</td>
-    ${extraCells}
-    </tr>`;
-  }).join('');
-
-  return buildSection(type, headers, rows);
-}
-
-function buildSAPSection(resources, byResource) {
-  return buildSAPSection_labeled('SAP', resources, byResource);
-}
-
-function buildSAPSection_labeled(title, resources, byResource) {
-  let maxCols   = 4;
-  let maxExtras = 0;
-
+function buildAmbulanceSection(title, resources, byResource, includeTarga = true) {
+  let maxSocc = 1;
+  let maxExtra = 0;
   resources.forEach(r => {
-    const crew   = byResource[r.id] || [];
-    const known  = crew.filter(p =>
-      ['soccorritore','opem'].includes(p.role?.toLowerCase()));
-    const extras = crew.filter(p =>
-      !['soccorritore','opem'].includes(p.role?.toLowerCase()));
-    maxCols   = Math.max(maxCols, known.length);
-    maxExtras = Math.max(maxExtras, extras.length);
+    const crew    = byResource[r.id] || [];
+    const socc    = crew.filter(p => ['soccorritore','volontario_generico'].includes(p.role));
+    const extras  = crew.filter(p => !['autista','infermiere','medico','soccorritore','volontario_generico'].includes(p.role));
+    maxSocc  = Math.max(maxSocc, socc.length);
+    maxExtra = Math.max(maxExtra, extras.length);
   });
 
-  const volHeaders   = Array.from({ length: maxCols },
-    () => `<th>Volontario</th>`).join('');
-  const extraHeaders = Array.from({ length: maxExtras },
-    () => `<th>Altro</th>`).join('');
-
+  const soccHeaders  = Array.from({ length: maxSocc },  () => `<th>Soccorritore</th>`).join('');
+  const extraHeaders = Array.from({ length: maxExtra }, () => `<th>Altro</th>`).join('');
   const headers = `
     <th class="disp-col-resource">Risorsa</th>
-    ${buildResourceInfoHeaders(false)}
-    ${volHeaders}
+    ${buildResourceInfoHeaders(includeTarga)}
+    <th>Autista</th>
+    ${soccHeaders}
+    <th>Infermiere</th>
+    <th>Medico</th>
     ${extraHeaders}`;
 
   const rows = resources.map(r => {
-    const crew    = byResource[r.id] || [];
-    const soccCount = crew.filter(p => p.role?.toLowerCase() === 'soccorritore').length;
-    const ordered = [
-      ...crew.filter(p => p.role?.toLowerCase() === 'soccorritore'),
-      ...crew.filter(p => p.role?.toLowerCase() === 'opem'),
-    ];
-    const extras = crew.filter(p =>
-      !['soccorritore','opem'].includes(p.role?.toLowerCase()));
+    const crew      = byResource[r.id] || [];
+    const autista   = crew.find(p => p.role === 'autista') || null;
+    const infermiere = crew.find(p => p.role === 'infermiere') || null;
+    const medico    = crew.find(p => p.role === 'medico') || null;
+    const socc      = crew.filter(p => ['soccorritore','volontario_generico'].includes(p.role));
+    const extras    = crew.filter(p => !['autista','infermiere','medico','soccorritore','volontario_generico'].includes(p.role));
 
-    const mainCells  = Array.from({ length: maxCols }, (_, i) =>
-      `<td>${buildPersonCard(
-        ordered[i] || null, r.id,
-        i < soccCount ? 'Soccorritore' : 'OPEM'
-      )}</td>`).join('');
-    const extraCells = Array.from({ length: maxExtras }, (_, i) =>
-      `<td>${buildPersonCard(extras[i] || null, r.id, 'Altro')}</td>`).join('');
+    const soccCells  = Array.from({ length: maxSocc },  (_, i) => `<td class="person-cell">${buildPersonCard(socc[i] || null)}</td>`).join('');
+    const extraCells = Array.from({ length: maxExtra }, (_, i) => `<td class="person-cell">${buildPersonCard(extras[i] || null)}</td>`).join('');
 
     return `<tr>
       <td class="disp-resource-name">
         ${r.resource}
-        <button class="disp-resource-edit-btn" 
-            onclick="openResourceModal('${r.id}')"
-            title="Modifica risorsa">✎</button>
-        </td>
-      ${buildResourceInfoCells(r, false)}
-      ${mainCells}
+        <button class="disp-resource-edit-btn" onclick="openResourceModal('${r.id}')" title="Modifica">✎</button>
+      </td>
+      ${buildResourceInfoCells(r, includeTarga)}
+      <td class="person-cell">${buildPersonCard(autista)}</td>
+      ${soccCells}
+      <td class="person-cell">${buildPersonCard(infermiere)}</td>
+      <td class="person-cell">${buildPersonCard(medico)}</td>
       ${extraCells}
     </tr>`;
   }).join('');
@@ -426,32 +326,62 @@ function buildSAPSection_labeled(title, resources, byResource) {
   return buildSection(title, headers, rows);
 }
 
-function buildLDCSection(resources, byResource, title = 'LDC — Coordinatori') {
-  let maxCols = 3;
+function buildSAPSection_labeled(title, resources, byResource) {
+  let maxCols = 1, maxExtra = 0;
   resources.forEach(r => {
-    const crew = byResource[r.id] || [];
-    maxCols = Math.max(maxCols, crew.length);
+    const crew   = byResource[r.id] || [];
+    const main   = crew.filter(p => ['soccorritore','opem'].includes(p.role));
+    const extras = crew.filter(p => !['soccorritore','opem'].includes(p.role));
+    maxCols  = Math.max(maxCols, main.length);
+    maxExtra = Math.max(maxExtra, extras.length);
   });
 
-  const volHeaders = Array.from({ length: maxCols },
-    () => `<th>Volontario</th>`).join('');
+  const mainHeaders  = Array.from({ length: maxCols },  () => `<th>Volontario</th>`).join('');
+  const extraHeaders = Array.from({ length: maxExtra }, () => `<th>Altro</th>`).join('');
   const headers = `
     <th class="disp-col-resource">Risorsa</th>
     ${buildResourceInfoHeaders(false)}
-    ${volHeaders}`;
+    ${mainHeaders}${extraHeaders}`;
+
+  const rows = resources.map(r => {
+    const crew   = byResource[r.id] || [];
+    const main   = crew.filter(p => ['soccorritore','opem'].includes(p.role));
+    const extras = crew.filter(p => !['soccorritore','opem'].includes(p.role));
+    const mainCells  = Array.from({ length: maxCols },  (_, i) => `<td class="person-cell">${buildPersonCard(main[i] || null)}</td>`).join('');
+    const extraCells = Array.from({ length: maxExtra }, (_, i) => `<td class="person-cell">${buildPersonCard(extras[i] || null)}</td>`).join('');
+    return `<tr>
+      <td class="disp-resource-name">
+        ${r.resource}
+        <button class="disp-resource-edit-btn" onclick="openResourceModal('${r.id}')" title="Modifica">✎</button>
+      </td>
+      ${buildResourceInfoCells(r, false)}
+      ${mainCells}${extraCells}
+    </tr>`;
+  }).join('');
+
+  return buildSection(title, headers, rows);
+}
+
+function buildLDCSection(resources, byResource, title = 'LDC — Coordinatori / PCA') {
+  let maxCols = 2;
+  resources.forEach(r => {
+    maxCols = Math.max(maxCols, (byResource[r.id] || []).length);
+  });
+
+  const headers = `
+    <th class="disp-col-resource">Risorsa</th>
+    ${buildResourceInfoHeaders(false)}
+    ${Array.from({ length: maxCols }, () => `<th>Volontario</th>`).join('')}`;
 
   const rows = resources.map(r => {
     const crew = byResource[r.id] || [];
     const cells = Array.from({ length: maxCols }, (_, i) =>
-      `<td>${buildPersonCard(crew[i] || null, r.id, 'Coordinatore')}</td>`
-    ).join('');
+      `<td class="person-cell">${buildPersonCard(crew[i] || null)}</td>`).join('');
     return `<tr>
       <td class="disp-resource-name">
         ${r.resource}
-        <button class="disp-resource-edit-btn" 
-            onclick="openResourceModal('${r.id}')"
-            title="Modifica risorsa">✎</button>
-        </td>
+        <button class="disp-resource-edit-btn" onclick="openResourceModal('${r.id}')" title="Modifica">✎</button>
+      </td>
       ${buildResourceInfoCells(r, false)}
       ${cells}
     </tr>`;
@@ -462,42 +392,21 @@ function buildLDCSection(resources, byResource, title = 'LDC — Coordinatori') 
 
 function buildPoolSection(title, people) {
   const MAX_COLS = 5;
-
-  if (people.length === 0 && title !== 'Non assegnati') return '';
-
-  if (people.length === 0) {
-    return `
-      <div class="disp-section">
-        <div class="disp-section-header">
-          <span class="disp-section-title">${title}</span>
-          <span class="side-badge">0</span>
-        </div>
-        <div class="empty-state" style="padding:16px;">Nessun personale</div>
-      </div>`;
-  }
-
-  // Build headers
-  const headers = Array.from({ length: MAX_COLS },
-    () => `<th>Volontario</th>`).join('');
-
-  // Fill grid left-to-right, top-to-bottom
+  const headers = Array.from({ length: MAX_COLS }, () => `<th>Volontario</th>`).join('');
   const numRows = Math.ceil(people.length / MAX_COLS);
   let rows = '';
   for (let row = 0; row < numRows; row++) {
     const cells = Array.from({ length: MAX_COLS }, (_, col) => {
-      const idx = row * MAX_COLS + col;
-      return `<td>${buildPersonCard(people[idx] || null)}</td>`;
+      const p = people[row * MAX_COLS + col];
+      return `<td class="person-cell">${buildPersonCard(p || null)}</td>`;
     }).join('');
-    rows += `<tr>${cells}</tr>`;
+    rows += `<tr>${rows}</tr>`;
   }
-
   return buildSection(title, headers, rows, people.length);
 }
 
 function buildSection(title, headers, rows, count) {
-  const badge = count !== undefined ? count :
-    (rows.match(/<tr>/g) || []).length;
-
+  const badge = count !== undefined ? count : (rows.match(/<tr>/g) || []).length;
   return `
     <div class="disp-section">
       <div class="disp-section-header">
@@ -520,37 +429,30 @@ function buildSection(title, headers, rows, count) {
                      comitato, phone and qualifications.
                      Empty slots show a + button to add personnel.
 ================================================================ */
-const PERSONNEL_ROLES = [
-  'Autista', 'Soccorritore', 'Infermiere', 'Medico',
-  'OPEM', 'Coordinatore', 'Altro'
-];
+function buildPersonCard(p) {
+  if (!p) return `<div class="disp-person disp-empty">—</div>`;
 
-function buildPersonCard(p, resourceId = null, suggestedRole = null) {
-  if (!p) {
-    if (!resourceId) return `<div class="disp-person disp-empty">—</div>`;
-    return `
-      <div class="disp-person disp-empty disp-clickable"
-        onclick="openPersonModal(null, '${resourceId}', '${suggestedRole || ''}')">
-        <span style="font-size:16px;color:var(--border-bright);">+</span>
-      </div>`;
-  }
-  const bg = p.present === true  ? 'rgba(63,185,80,0.12)'
-           : p.present === false ? 'rgba(226,75,74,0.12)'
-           : 'transparent';
-  const presentClass = p.present === true  ? 'disp-person-present'
-                   : p.present === false ? 'disp-person-absent'
-                   : '';
+  const ana    = p.anagrafica || {};
+  const status = p.status || 'scheduled';
+  const bg     = STATUS_COLORS[status];
+  const comp   = ana.competenza_attivazione
+    ? `<span class="disp-person-comp comp-${ana.competenza_attivazione}">${ana.competenza_attivazione}</span>`
+    : '';
+
   return `
-    <div class="disp-person disp-clickable" data-present="${p.present}"
+    <div class="disp-person disp-clickable" data-status="${status}"
+      style="background:${bg};"
       onclick="openPersonModal('${p.id}')">
-      <div class="disp-person-name">${p.surname} ${p.name}</div>
-      ${p.comitato       ? `<div class="disp-person-meta">${p.comitato}</div>` : ''}
-      ${p.number         ? `<div class="disp-person-meta">
-        <a href="tel:${p.number}" class="disp-phone" onclick="event.stopPropagation()">
-          ${p.number}</a></div>` : ''}
-      ${p.qualifications ? `<div class="disp-person-qual">${p.qualifications}</div>` : ''}
+      <div class="disp-person-name">${ana.surname || ''} ${ana.name || ''}</div>
+      ${p.role ? `<div class="disp-person-meta">${p.role}</div>` : ''}
+      ${ana.comitato ? `<div class="disp-person-meta">${ana.comitato}</div>` : ''}
+      ${ana.number ? `<div class="disp-person-meta">
+        <a href="tel:${ana.number}" class="disp-phone" onclick="event.stopPropagation()">${ana.number}</a>
+      </div>` : ''}
+      ${comp}
     </div>`;
 }
+
 
 /* ================================================================
    PERSON MODAL
@@ -562,147 +464,82 @@ function buildPersonCard(p, resourceId = null, suggestedRole = null) {
                         refreshes the full dispositivo view.
    deletePersonnel    — deletes a personnel row after confirmation.
 ================================================================ */
-let _allDispResources = []; // cached for the resource dropdown
+async function openPersonModal(personnelId) {
+  const person = await fetchPersonnelById(personnelId);
+  if (!person) return;
 
-async function openPersonModal(personnelId, presetResourceId = null, presetRole = null) {
-  // Fetch all resources for dropdown
-  _allDispResources = await fetchDispResourceDropdown(PCA.eventId);
-  const person = personnelId ? await fetchPersonnelById(personnelId) : null;
+  const ana    = person.anagrafica || {};
+  const status = person.status || 'scheduled';
 
-  const isNew   = !person;
-  const title   = isNew ? 'Nuovo personale' : `${person.name} ${person.surname}`;
-  const resOpts = _allDispResources.map(r =>
-    `<option value="${r.id}"
-      ${(person?.resource || presetResourceId) === r.id ? 'selected' : ''}>
-      ${r.resource} (${r.resource_type})
-    </option>`).join('');
+  document.getElementById('disp-modal-title').textContent =
+    `${ana.surname} ${ana.name}`;
 
-  const roleOpts = PERSONNEL_ROLES.map(role =>
-    `<option value="${role}"
-      ${(person?.role || presetRole) === role ? 'selected' : ''}>
-      ${role}
-    </option>`).join('');
-
-  document.getElementById('disp-modal-title').textContent = title;
   document.getElementById('disp-modal-body').innerHTML = `
-    <div class="form-row">
-      <div class="form-group">
-        <label>Nome <span style="color:var(--red)">*</span></label>
-        <input type="text" id="dp-name" value="${person?.name || ''}" placeholder="Nome" />
-      </div>
-      <div class="form-group">
-        <label>Cognome <span style="color:var(--red)">*</span></label>
-        <input type="text" id="dp-surname" value="${person?.surname || ''}" placeholder="Cognome" />
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Codice Fiscale</label>
-        <input type="text" id="dp-cf" value="${person?.cf || ''}" placeholder="-" 
-          style="text-transform:uppercase" />
-      </div>
-      <div class="form-group">
-        <label>Ruolo</label>
-        <select id="dp-role">${roleOpts}</select>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Comitato</label>
-        <input type="text" id="dp-comitato" value="${person?.comitato || ''}" placeholder="-" />
-      </div>
-      <div class="form-group">
-        <label>Telefono</label>
-        <input type="tel" id="dp-number" value="${person?.number || ''}" placeholder="-" />
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label>Email</label>
-        <input type="email" id="dp-email" value="${person?.email || ''}" placeholder="mario@example.com" />
-      </div>
-      <div class="form-group">
-        <label>Qualifiche</label>
-        <input type="text" id="dp-qualifications" value="${person?.qualifications || ''}" 
-          placeholder="Es. BLSD, PTC" />
-      </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+      <div><span class="form-label">Ruolo</span>
+        <div style="font-size:13px;margin-top:2px;">${person.role || '—'}</div></div>
+      <div><span class="form-label">Comitato</span>
+        <div style="font-size:13px;margin-top:2px;">${ana.comitato || '—'}</div></div>
+      <div><span class="form-label">Telefono</span>
+        <div style="font-size:13px;margin-top:2px;">${ana.number || '—'}</div></div>
+      <div><span class="form-label">Qualifiche</span>
+        <div style="font-size:13px;margin-top:2px;">${ana.qualifications || '—'}</div></div>
+      <div><span class="form-label">Competenza</span>
+        <div style="font-size:13px;margin-top:2px;">${ana.competenza_attivazione || '—'}</div></div>
+      <div><span class="form-label">Risorsa</span>
+        <div style="font-size:13px;margin-top:2px;">${person.resource_days?.resources?.resource || '—'}</div></div>
     </div>
     <div class="form-group">
-      <label>Risorsa assegnata</label>
-      <select id="dp-resource">${resOpts}</select>
-    </div>
-    <div class="form-group">
-      <label>Presente</label>
-      <select id="dp-present">
-        <option value=""     ${person?.present === null  ? 'selected' : ''}>— Non specificato —</option>
-        <option value="true"  ${person?.present === true  ? 'selected' : ''}>✓ Presente</option>
-        <option value="false" ${person?.present === false ? 'selected' : ''}>✗ Assente</option>
-      </select>
+      <label>Stato</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+        ${['scheduled','activated','cancelled','no_show'].map(s => `
+          <button class="pca-yn-btn ${status === s ? 'active-yes' : ''}"
+            id="status-btn-${s}"
+            onclick="selectPersonnelStatus('${s}')">
+            ${STATUS_LABELS[s]}
+          </button>`).join('')}
+      </div>
     </div>
     <div id="dp-error" class="error-msg"></div>`;
 
   const saveBtn = document.getElementById('disp-modal-save');
-  saveBtn.onclick = () => savePersonnel(personnelId);
+  saveBtn.onclick = () => savePersonnelStatus(personnelId);
+  saveBtn._selectedStatus = status;
 
-  // Show delete button only for existing person
   const delBtn = document.getElementById('disp-modal-delete');
-  if (isNew) {
-    delBtn.style.display = 'none';
-  } else {
-    delBtn.style.display = 'block';
-    delBtn.onclick = () => deletePersonnel(personnelId);
-  }
+  delBtn.style.display = 'none';
 
   document.getElementById('modal-disp-person').classList.remove('hidden');
 }
 
-async function savePersonnel(personnelId) {
-  const name    = document.getElementById('dp-name').value.trim();
-  const surname = document.getElementById('dp-surname').value.trim();
-  const errEl   = document.getElementById('dp-error');
-  errEl.textContent = '';
+function selectPersonnelStatus(status) {
+  document.querySelectorAll('[id^="status-btn-"]').forEach(b => b.classList.remove('active-yes'));
+  document.getElementById(`status-btn-${status}`)?.classList.add('active-yes');
+  document.getElementById('disp-modal-save')._selectedStatus = status;
+}
 
-  if (!name)    { errEl.textContent = 'Nome obbligatorio.';    return; }
-  if (!surname) { errEl.textContent = 'Cognome obbligatorio.'; return; }
-
+async function savePersonnelStatus(personnelId) {
   const saveBtn = document.getElementById('disp-modal-save');
+  const status  = saveBtn._selectedStatus;
+  if (!status) return;
+
   saveBtn.disabled = true;
   saveBtn.textContent = 'Salvataggio...';
-  const val = document.getElementById('dp-present').value;
-  
-  const payload = {
-    name,
-    surname,
-    cf:             document.getElementById('dp-cf').value.trim().toUpperCase() || null,
-    role:           document.getElementById('dp-role').value || null,
-    comitato:       document.getElementById('dp-comitato').value.trim() || null,
-    number:         document.getElementById('dp-number').value.trim() || null,
-    email:          document.getElementById('dp-email').value.trim() || null,
-    qualifications: document.getElementById('dp-qualifications').value.trim() || null,
-    resource:       document.getElementById('dp-resource').value || null,
-    present:        val === 'true' ? true : val === 'false' ? false : null,
-  };
 
-  const result = await upsertPersonnel(personnelId, payload, PCA.eventId);
+  const ok = await updatePersonnelStatus(personnelId, status);
   saveBtn.disabled = false;
   saveBtn.textContent = 'Salva';
-  if (!result.ok) { errEl.textContent = result.message; return; }
 
-  showToast(personnelId ? 'Personale aggiornato ✓' : 'Personale aggiunto ✓', 'success');
+  if (!ok) {
+    document.getElementById('dp-error').textContent = 'Errore durante il salvataggio.';
+    return;
+  }
+
+  showToast('Stato aggiornato ✓', 'success');
   document.getElementById('modal-disp-person').classList.add('hidden');
   await renderDispositivo();
 }
 
-async function deletePersonnel(personnelId) {
-  if (!confirm('Eliminare questo personale?')) return;
-
-  const ok = await removePersonnel(personnelId);
-  if (!ok) { document.getElementById('dp-error').textContent = 'Errore durante l\'eliminazione.'; return; }
-
-  showToast('Personale eliminato', 'success');
-  document.getElementById('modal-disp-person').classList.add('hidden');
-  await renderDispositivo();
-}
 
 /* ================================================================
    RESOURCE MODAL
@@ -711,17 +548,17 @@ async function deletePersonnel(personnelId) {
    saveResource      — updates the resource row, handles geom
                        construction from lat/lng inputs.
 ================================================================ */
+let _allDispResources = [];
+
 async function openResourceModal(resourceId) {
   const r = _allDispResources.find(r => r.id === resourceId);
   if (!r) return;
 
   const ldcs = _allDispResources.filter(r => r.resource_type === 'LDC');
   const coordOpts = `<option value="">— Nessuno —</option>` +
-    ldcs.map(ldc => `
-      <option value="${ldc.id}" 
-        ${r.coordinator?.resource === ldc.resource ? 'selected' : ''}>
-        ${ldc.resource}
-      </option>`).join('');
+    ldcs.map(ldc => `<option value="${ldc.id}"
+      ${r.coordinator?.resource === ldc.resource ? 'selected' : ''}>
+      ${ldc.resource}</option>`).join('');
 
   document.getElementById('disp-modal-title').textContent = r.resource;
   document.getElementById('disp-modal-body').innerHTML = `
@@ -744,7 +581,7 @@ async function openResourceModal(resourceId) {
     <div class="form-row">
       <div class="form-group">
         <label>Inizio operatività</label>
-        <input type="text" id="dr-start" 
+        <input type="text" id="dr-start"
           value="${r.start_time ? formatDispDateTime(r.start_time) : ''}"
           placeholder="DD/MM/YYYY HH:MM" />
       </div>
@@ -765,19 +602,17 @@ async function openResourceModal(resourceId) {
     </div>
     <div id="dr-error" class="error-msg"></div>`;
 
-  const saveBtn = document.getElementById('disp-modal-save');
-  saveBtn.onclick = () => saveResource(resourceId);
+  document.getElementById('disp-modal-save').onclick = () => saveResource(resourceId);
   document.getElementById('disp-modal-delete').style.display = 'none';
   document.getElementById('modal-disp-person').classList.remove('hidden');
 }
 
 async function saveResource(resourceId) {
-  const errEl  = document.getElementById('dr-error');
+  const errEl = document.getElementById('dr-error');
   errEl.textContent = '';
 
-  const lat = parseFloat(document.getElementById('dr-lat').value);
-  const lng = parseFloat(document.getElementById('dr-lng').value);
-
+  const lat   = parseFloat(document.getElementById('dr-lat').value);
+  const lng   = parseFloat(document.getElementById('dr-lng').value);
   const start = parseDispDateTime(document.getElementById('dr-start').value.trim());
   const end   = parseDispDateTime(document.getElementById('dr-end').value.trim());
 
@@ -799,19 +634,14 @@ async function saveResource(resourceId) {
     start_time:     start,
     end_time:       end,
   };
-
-  if (!isNaN(lat) && !isNaN(lng)) {
-    payload.geom = `POINT(${lng} ${lat})`;
-  }
+  if (!isNaN(lat) && !isNaN(lng)) payload.geom = `POINT(${lng} ${lat})`;
 
   const result = await updateResourceDetails(resourceId, payload);
-
   saveBtn.disabled = false;
   saveBtn.textContent = 'Salva';
 
   if (!result) { errEl.textContent = 'Errore durante il salvataggio.'; return; }
-
-  showPCAToast('Risorsa aggiornata ✓', 'success');
+  showToast('Risorsa aggiornata ✓', 'success');
   document.getElementById('modal-disp-person').classList.add('hidden');
   await renderDispositivo();
 }
@@ -823,20 +653,32 @@ async function saveResource(resourceId) {
 ================================================================ */
 function parseDispDateTime(str) {
   if (!str) return null;
-  const match = str.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/);
-  if (!match) return null;
-  const [, dd, mm, yyyy, hh, min] = match;
-  const date = new Date(`${yyyy}-${mm}-${dd}T${hh}:${min}:00`);
-  return isNaN(date.getTime()) ? null : date.toISOString();
+  const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  return new Date(`${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:00`).toISOString();
 }
 
-function formatDispDateTime(isoStr) {
-  if (!isoStr) return '';
-  const d = new Date(isoStr);
-  const dd   = String(d.getDate()).padStart(2,'0');
-  const mm   = String(d.getMonth()+1).padStart(2,'0');
-  const yyyy = d.getFullYear();
-  const hh   = String(d.getHours()).padStart(2,'0');
-  const min  = String(d.getMinutes()).padStart(2,'0');
-  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
+function formatDispDateTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function initDispResize() {
+  document.querySelectorAll('.disp-table th').forEach(th => {
+    th.style.position   = 'relative';
+    th.style.userSelect = 'none';
+    const handle = document.createElement('div');
+    handle.style.cssText = `position:absolute;right:0;top:0;width:5px;height:100%;cursor:col-resize;`;
+    let startX, startW;
+    handle.addEventListener('mousedown', e => {
+      startX = e.pageX; startW = th.offsetWidth;
+      const onMove = ev => { th.style.width = Math.max(40, startW + ev.pageX - startX) + 'px'; };
+      const onUp   = ()  => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      e.preventDefault();
+    });
+    th.appendChild(handle);
+  });
 }

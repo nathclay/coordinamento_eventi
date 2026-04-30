@@ -445,12 +445,12 @@ function addGridAxisLabels(cells, map) {
   // Unique columns by longitude, sorted west→east → A, B, C...
   const uniqueLngs = [...new Set(
     cellData.map(c => Math.round(c.lng / TOLERANCE) * TOLERANCE)
-  )].sort((a, b) => a - b);
+  )].sort((a, b) => b - a);
 
   // Unique rows by latitude, sorted north→south → 1, 2, 3...
   const uniqueLats = [...new Set(
     cellData.map(c => Math.round(c.lat / TOLERANCE) * TOLERANCE)
-  )].sort((a, b) => b - a);
+  )].sort((a, b) => a - b);
 
   const gridNorth = Math.max(...cellData.map(c => c.north));
   const gridWest  = Math.min(...cellData.map(c => c.west));

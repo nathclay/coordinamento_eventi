@@ -22,6 +22,9 @@ CREATE TRIGGER trg_event_radio_channels_updated_at
 BEFORE UPDATE ON event_radio_channels
 FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+CREATE TRIGGER trg_personnel_updated_at
+BEFORE UPDATE ON personnel
+FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 
 CREATE TRIGGER trg_sync_incident_shortcuts
@@ -59,3 +62,15 @@ FOR EACH ROW EXECUTE FUNCTION sync_incident_status();
 CREATE TRIGGER trg_sync_sibling_responses
 AFTER UPDATE OF outcome ON incident_responses
 FOR EACH ROW EXECUTE FUNCTION sync_sibling_responses();
+
+CREATE TRIGGER trg_anagrafica_audit
+BEFORE INSERT OR UPDATE ON anagrafica
+FOR EACH ROW EXECUTE FUNCTION set_audit_fields();
+ 
+CREATE TRIGGER trg_resource_days_audit
+BEFORE INSERT OR UPDATE ON resource_days
+FOR EACH ROW EXECUTE FUNCTION set_audit_fields();
+ 
+CREATE TRIGGER trg_personnel_audit
+BEFORE INSERT OR UPDATE ON personnel
+FOR EACH ROW EXECUTE FUNCTION set_audit_fields();

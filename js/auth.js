@@ -173,10 +173,9 @@ async function loadPersonnelScreen() {
 
   const { data: personnel } = await db
     .from('personnel')
-    .select('id, name, surname, role')
-    .eq('resource', STATE.resource.id)
-    // .eq('present', true)  TODO: add when present tracking is live
-    .order('name');
+    .select('id, role, anagrafica(id, name, surname)')
+    .eq('resource_days.resource_id', STATE.resource.id)  
+    .order('anagrafica(surname)');
 
   if (!personnel || personnel.length === 0) {
     launchView();  
