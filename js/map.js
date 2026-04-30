@@ -638,6 +638,23 @@ async function initCercaPanel() {
       _cercaGridLayer = L.geoJSON({ type:'Feature', geometry: geom }, {
         style: { color: '#ffd700', weight: 3, opacity: 1, fillOpacity: 0.25, fillColor: '#ffd700' }  // ← yellow
       }).addTo(mapInstance);
+
+      const b = _cercaGridLayer.getBounds();
+      const center = b.getCenter();
+      _cercaPoiMarker = L.marker([center.lat, center.lng], {
+        icon: L.divIcon({
+          className: '',
+          html: `<div style="font-size:16px;font-weight:800;color:#000;
+            font-family:system-ui,sans-serif;white-space:nowrap;
+            text-shadow:0 0 4px #fff,0 0 4px #fff;">
+            ${cell.label}
+          </div>`,
+          iconAnchor: [20, 10],
+        }),
+        interactive: false,
+        zIndexOffset: 100,
+      }).addTo(mapInstance);
+
       mapInstance.fitBounds(_cercaGridLayer.getBounds(), { padding: [20, 20] });
     });
     }
