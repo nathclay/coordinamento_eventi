@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Master — CGE</title>
+  <link rel="stylesheet" href="css/dispositivo.css" />
+  <link rel="stylesheet" href="css/master.css" />
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="screen-login" class="screen hidden">
+  <div class="login-card">
+    <div class="login-logo">🛠️</div>
+    <h1 class="login-title">Master</h1>
+    <p class="login-subtitle">Console amministrativa — CGE</p>
+    <div id="login-error" class="error-msg"></div>
+    <button id="btn-google" class="btn-google">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84c-.21 1.13-.84 2.09-1.8 2.73v2.27h2.91c1.7-1.57 2.69-3.88 2.69-6.64z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.17l-2.91-2.27c-.81.54-1.84.86-3.05.86-2.34 0-4.33-1.58-5.04-3.71H.96v2.34C2.44 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.96 10.71c-.18-.54-.28-1.11-.28-1.71s.1-1.17.28-1.71V4.95H.96C.35 6.17 0 7.55 0 9s.35 2.83.96 4.05l3-2.34z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.58C13.46.89 11.43 0 9 0 5.48 0 2.44 2.02.96 4.95l3 2.34C4.67 5.16 6.66 3.58 9 3.58z"/></svg>
+      Accedi con Google
+    </button>
+    <p class="login-note">Accesso riservato agli amministratori autorizzati.</p>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="screen-main" class="screen hidden">
+  <header class="disp-header">
+    <div class="header-left">
+      <span class="header-logo">🛠️</span>
+      <span class="header-event-name">Master</span>
+    </div>
+    <div class="header-right">
+      <span class="header-user" id="header-user"></span>
+      <button class="btn-secondary btn-sm" id="btn-logout">Esci</button>
+    </div>
+  </header>
+
+  <div class="disp-body">
+    <nav class="disp-sidebar" id="master-sidebar">
+      <div class="sidebar-nav">
+        <button class="sidebar-item active" data-page="eventi">
+          <span class="sidebar-icon">📅</span>
+          <span class="sidebar-label">Eventi</span>
+        </button>
+        <button class="sidebar-item" data-page="risorse">
+          <span class="sidebar-icon">🚑</span>
+          <span class="sidebar-label">Risorse</span>
+        </button>
+        <button class="sidebar-item" data-page="utenti">
+          <span class="sidebar-icon">👤</span>
+          <span class="sidebar-label">Utenti</span>
+        </button>
+        <button class="sidebar-item" data-page="storico">
+          <span class="sidebar-icon">🕒</span>
+          <span class="sidebar-label">Storico modifiche</span>
+        </button>
+      </div>
+    </nav>
+    <div id="page-content" class="page-content">
+      <div class="loading-spinner"><div class="spinner"></div><span>Caricamento...</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: EVENT FORM -->
+<div id="modal-event" class="modal-overlay hidden">
+  <div class="modal-card modal-wide">
+    <div class="modal-header">
+      <span class="modal-title" id="event-modal-title">Nuovo evento</span>
+      <button class="modal-close" data-modal="modal-event">✕</button>
+    </div>
+    <div class="modal-body" id="event-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" data-modal="modal-event">Annulla</button>
+      <button class="btn-primary" id="event-modal-save">Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: BULK ADD RESOURCES -->
+<div id="modal-bulk-resources" class="modal-overlay hidden">
+  <div class="modal-card">
+    <div class="modal-header">
+      <span class="modal-title">Aggiungi risorse</span>
+      <button class="modal-close" data-modal="modal-bulk-resources">✕</button>
+    </div>
+    <div class="modal-body" id="bulk-resources-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" data-modal="modal-bulk-resources">Annulla</button>
+      <button class="btn-primary" id="bulk-resources-modal-save">Crea</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase.js"></script>
+<script src="js/rpc-master.js"></script>
+<script src="js/master.js"></script>
+</body>
+</html>

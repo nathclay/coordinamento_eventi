@@ -1,0 +1,115 @@
+/* ================================================================
+   css/master.css — Master admin console
+   Extends css/dispositivo.css (loaded first). Only master-specific
+   additions live here.
+================================================================ */
+
+/* ── Google login button ──────────────────────────────────────*/
+.btn-google {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  background: var(--bg-2); border: 2px solid var(--border);
+  border-radius: var(--radius); color: var(--text-primary);
+  cursor: pointer; font-family: var(--font-body); font-size: 14px;
+  font-weight: 700; padding: 10px 18px; transition: all 0.15s;
+}
+.btn-google:hover { border-color: var(--border-bright); box-shadow: var(--shadow-sm); }
+.btn-google:disabled { opacity: 0.5; cursor: not-allowed; }
+.login-note { font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 4px; }
+
+/* ── Events list ───────────────────────────────────────────────*/
+.events-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.events-grid { display: flex; flex-direction: column; gap: 10px; }
+.master-event-card {
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 14px 18px;
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  box-shadow: var(--shadow-sm); cursor: pointer; transition: border-color .15s, box-shadow .15s;
+}
+.master-event-card:hover { border-color: var(--blue); box-shadow: var(--shadow-md); }
+.master-event-card.selected { border-color: var(--blue); background: var(--blue-dim); }
+.master-event-name { font-family: var(--font-display); font-size: 16px; font-weight: 600; }
+.master-event-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+.master-event-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.badge-status {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  padding: 2px 8px; border-radius: 10px;
+}
+.badge-draft    { background: var(--bg-3); color: var(--text-muted); }
+.badge-planning { background: var(--blue-dim); color: var(--blue); }
+.badge-active   { background: var(--green-dim); color: var(--green); }
+.badge-archived { background: var(--bg-3); color: var(--text-muted); opacity: 0.7; }
+
+/* ── Event selector banner (Risorse / Utenti tabs) ────────────*/
+.event-context-bar {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 10px 16px;
+  box-shadow: var(--shadow-sm); flex-shrink: 0;
+}
+.event-context-label { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; }
+.event-context-select {
+  flex: 1; max-width: 360px;
+  background: var(--bg-3); border: 2px solid var(--border);
+  border-radius: var(--radius); color: var(--text-primary);
+  font-family: var(--font-body); font-size: 14px; font-weight: 700; padding: 7px 12px;
+}
+
+/* ── Resource groups (Risorse tab) ────────────────────────────*/
+.resource-type-group {
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm);
+}
+.resource-type-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; background: var(--bg-3); border-bottom: 1px solid var(--border);
+}
+.resource-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 16px; border-bottom: 1px solid var(--border);
+}
+.resource-row:last-child { border-bottom: none; }
+.resource-row-name { font-family: var(--font-mono); font-weight: 700; font-size: 14px; min-width: 140px; }
+.resource-row-name input { font-family: var(--font-mono); font-weight: 700; }
+.resource-row-email { flex: 1; }
+.resource-row-crew { font-size: 12px; color: var(--text-muted); min-width: 60px; text-align: right; }
+
+/* ── Admins panel (Utenti tab) ────────────────────────────────*/
+.admins-panel {
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); padding: 16px; box-shadow: var(--shadow-sm);
+}
+.admins-panel-title { font-family: var(--font-display); font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.admins-panel-hint { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+.admin-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--bg-3); border: 1px solid var(--border);
+  border-radius: 20px; padding: 4px 12px; font-size: 13px; margin: 0 6px 6px 0;
+}
+.admin-chip-role {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  padding: 1px 7px; border-radius: 10px;
+}
+.admin-chip-role.role-master  { background: var(--blue-dim); color: var(--blue); }
+.admin-chip-role.role-planner { background: var(--green-dim); color: var(--green); }
+
+/* ── Change log (Storico tab) ─────────────────────────────────*/
+.log-filters { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.log-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.log-table th {
+  padding: 9px 12px; text-align: left; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted);
+  background: var(--bg-3); border-bottom: 2px solid var(--border); white-space: nowrap;
+}
+.log-table td { padding: 8px 12px; vertical-align: top; border-bottom: 1px solid var(--border); }
+.log-table tbody tr:hover { background: #f8f9fc; }
+.log-action { font-weight: 700; font-size: 11px; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+.log-action-INSERT { background: var(--green-dim); color: var(--green); }
+.log-action-UPDATE { background: var(--blue-dim); color: var(--blue); }
+.log-action-DELETE { background: var(--red-dim); color: var(--red); }
+.log-table-name { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
+.log-diff-toggle { background: transparent; border: none; color: var(--blue); cursor: pointer; font-size: 12px; font-weight: 700; padding: 0; }
+.log-diff-row td { background: var(--bg-3); }
+.log-diff-pre {
+  font-family: var(--font-mono); font-size: 11px; white-space: pre-wrap; word-break: break-all;
+  max-height: 260px; overflow-y: auto; margin: 0;
+}
