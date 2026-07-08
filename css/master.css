@@ -30,6 +30,14 @@
 .master-event-name { font-family: var(--font-display); font-size: 16px; font-weight: 600; }
 .master-event-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
 .master-event-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.badge-status {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  padding: 2px 8px; border-radius: 10px;
+}
+.badge-draft    { background: var(--bg-3); color: var(--text-muted); }
+.badge-planning { background: var(--blue-dim); color: var(--blue); }
+.badge-active   { background: var(--green-dim); color: var(--green); }
+.badge-archived { background: var(--bg-3); color: var(--text-muted); opacity: 0.7; }
 
 /* ── Event selector banner (Risorse / Utenti tabs) ────────────*/
 .event-context-bar {

@@ -4,7 +4,7 @@
 ================================================================ */
 
 const RESOURCE_TYPES = ['ASM','ASI','SAP','BICI','MM','PMA','LDC','PCA','ALTRO'];
-const LOG_TABLES = ['events','resources','personnel','anagrafica','resource_type_requirements'];
+const LOG_TABLES = ['events','resources','resource_sessions','personnel','anagrafica','event_roles'];
 
 const MASTER = {
   session: null,
@@ -128,7 +128,7 @@ function renderEventsGrid() {
       <div>
         <div class="master-event-name">${ev.name}</div>
         <div class="master-event-meta">
-          ${ev.is_active ? '<span class="badge-active">● Attivo</span>' : '<span class="badge-inactive">○ Non attivo</span>'}
+          <span class="badge-status badge-${ev.status || 'draft'}">${ev.status || 'draft'}</span>
           ${ev.start_date ? ` · dal ${fmtDate(ev.start_date)}` : ''}${ev.end_date ? ` al ${fmtDate(ev.end_date)}` : ''}
           · Sessione ${ev.current_session ?? 1}
         </div>
@@ -161,11 +161,12 @@ function openEventModal(event) {
     <div class="form-row">
       <div class="form-group"><label>Nome <span class="req">*</span></label>
         <input type="text" id="ev-name" value="${e.name || ''}" /></div>
-      <div class="form-group"><label>Attivo</label>
-        <div class="toggle-group">
-          <button type="button" class="toggle-btn ev-active-btn ${!e.is_active ? 'active' : ''}" data-val="false">No</button>
-          <button type="button" class="toggle-btn ev-active-btn ${e.is_active ? 'active' : ''}" data-val="true">Sì</button>
-        </div>
+      <div class="form-group"><label>Stato</label>
+        <select id="ev-status">
+          ${['draft','planning','active','archived'].map(s =>
+            `<option value="${s}" ${(e.status || 'draft') === s ? 'selected' : ''}>${s}</option>`
+          ).join('')}
+        </select>
       </div>
     </div>
     <div class="form-group"><label>Descrizione</label>
@@ -204,15 +205,37 @@ function openEventModal(event) {
         </div>
       </div>
     </div>
+    <div class="form-row">
+      <div class="form-group"><label>Soccorsi</label>
+        <div class="toggle-group">
+          <button type="button" class="toggle-btn ev-soccorsi-btn ${!e.is_soccorsi && e.is_soccorsi !== undefined ? 'active' : ''}" data-val="false">No</button>
+          <button type="button" class="toggle-btn ev-soccorsi-btn ${e.is_soccorsi !== false ? 'active' : ''}" data-val="true">Sì</button>
+        </div>
+      </div>
+      <div class="form-group"><label>PMA</label>
+        <div class="toggle-group">
+          <button type="button" class="toggle-btn ev-pma-btn ${!e.is_pma && e.is_pma !== undefined ? 'active' : ''}" data-val="false">No</button>
+          <button type="button" class="toggle-btn ev-pma-btn ${e.is_pma !== false ? 'active' : ''}" data-val="true">Sì</button>
+        </div>
+      </div>
+      <div class="form-group"><label>Field</label>
+        <div class="toggle-group">
+          <button type="button" class="toggle-btn ev-field-btn ${!e.field_enabled && e.field_enabled !== undefined ? 'active' : ''}" data-val="false">No</button>
+          <button type="button" class="toggle-btn ev-field-btn ${e.field_enabled !== false ? 'active' : ''}" data-val="true">Sì</button>
+        </div>
+      </div>
+    </div>
     <div class="form-group"><label>Note generali</label>
       <textarea id="ev-notes-general" rows="2">${e.notes_general || ''}</textarea></div>
     <div class="form-group"><label>Note coordinatori</label>
       <textarea id="ev-notes-coord" rows="2">${e.notes_coordinators || ''}</textarea></div>
     <div id="event-error" class="error-msg"></div>`;
 
-  wireToggleGroup('ev-active-btn');
   wireToggleGroup('ev-route-btn');
   wireToggleGroup('ev-grid-btn');
+  wireToggleGroup('ev-soccorsi-btn');
+  wireToggleGroup('ev-pma-btn');
+  wireToggleGroup('ev-field-btn');
 
   const saveBtn = document.getElementById('event-modal-save');
   const freshSave = saveBtn.cloneNode(true);
@@ -251,9 +274,12 @@ async function saveEvent(eventId) {
     center_lat:          numOrNull(document.getElementById('ev-lat').value),
     center_lng:          numOrNull(document.getElementById('ev-lng').value),
     default_zoom:        numOrNull(document.getElementById('ev-zoom').value) ?? 14,
-    is_active:           toggleGroupValue('ev-active-btn'),
+    status:              document.getElementById('ev-status').value,
     is_route:            toggleGroupValue('ev-route-btn'),
     is_grid:             toggleGroupValue('ev-grid-btn'),
+    is_soccorsi:         toggleGroupValue('ev-soccorsi-btn'),
+    is_pma:              toggleGroupValue('ev-pma-btn'),
+    field_enabled:       toggleGroupValue('ev-field-btn'),
     notes_general:       document.getElementById('ev-notes-general').value.trim() || null,
     notes_coordinators:  document.getElementById('ev-notes-coord').value.trim() || null,
   };

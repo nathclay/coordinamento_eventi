@@ -53,10 +53,6 @@ DROP POLICY IF EXISTS "planners_personnel_update" ON personnel;
 CREATE POLICY "planners_personnel_update" ON personnel
   FOR UPDATE USING (is_planner_or_master()) WITH CHECK (is_planner_or_master());
 
-DROP POLICY IF EXISTS "planners_requirements" ON resource_type_requirements;
-CREATE POLICY "planners_requirements" ON resource_type_requirements FOR ALL
-  USING (is_planner_or_master()) WITH CHECK (is_planner_or_master());
-
 -- NOTE: `personnel` (and `resources`, `events`, etc.) also carry the
 -- pre-existing blanket "authenticated all operations" policy from
 -- SQL/policies.sql. RLS policies are OR'd together (permissive by
@@ -138,8 +134,8 @@ DECLARE
 BEGIN
   v_row_id := COALESCE(NEW.id, OLD.id);
 
-  -- event_id is a column on personnel/resources, absent on
-  -- anagrafica/resource_type_requirements (event-independent). ->>'event_id'
+  -- event_id is a column on personnel/resources/resource_sessions/event_roles,
+  -- absent on anagrafica (event-independent). ->>'event_id'
   -- returns NULL safely on rows/tables without that key — no error.
   IF TG_TABLE_NAME = 'events' THEN
     v_event_id := v_row_id;
@@ -179,8 +175,12 @@ CREATE TRIGGER trg_change_log_anagrafica
   AFTER INSERT OR UPDATE OR DELETE ON anagrafica
   FOR EACH ROW EXECUTE FUNCTION log_change();
 
-CREATE TRIGGER trg_change_log_resource_type_requirements
-  AFTER INSERT OR UPDATE OR DELETE ON resource_type_requirements
+CREATE TRIGGER trg_change_log_resource_sessions
+  AFTER INSERT OR UPDATE OR DELETE ON resource_sessions
+  FOR EACH ROW EXECUTE FUNCTION log_change();
+
+CREATE TRIGGER trg_change_log_event_roles
+  AFTER INSERT OR UPDATE OR DELETE ON event_roles
   FOR EACH ROW EXECUTE FUNCTION log_change();
 
 CREATE TRIGGER trg_change_log_events
