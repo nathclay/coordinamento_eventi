@@ -41,10 +41,6 @@ DROP POLICY IF EXISTS "planners_anagrafica" ON anagrafica;
 CREATE POLICY "planners_anagrafica" ON anagrafica FOR ALL
   USING (is_planner_or_master()) WITH CHECK (is_planner_or_master());
 
-DROP POLICY IF EXISTS "planners_resource_days" ON resource_days;
-CREATE POLICY "planners_resource_days" ON resource_days FOR ALL
-  USING (is_planner_or_master()) WITH CHECK (is_planner_or_master());
-
 DROP POLICY IF EXISTS "planners_personnel_select" ON personnel;
 CREATE POLICY "planners_personnel_select" ON personnel
   FOR SELECT USING (is_planner_or_master());
@@ -142,7 +138,7 @@ DECLARE
 BEGIN
   v_row_id := COALESCE(NEW.id, OLD.id);
 
-  -- event_id is a column on personnel/resource_days/resources, absent on
+  -- event_id is a column on personnel/resources, absent on
   -- anagrafica/resource_type_requirements (event-independent). ->>'event_id'
   -- returns NULL safely on rows/tables without that key — no error.
   IF TG_TABLE_NAME = 'events' THEN
@@ -173,10 +169,6 @@ $$;
 
 CREATE TRIGGER trg_change_log_personnel
   AFTER INSERT OR UPDATE OR DELETE ON personnel
-  FOR EACH ROW EXECUTE FUNCTION log_change();
-
-CREATE TRIGGER trg_change_log_resource_days
-  AFTER INSERT OR UPDATE OR DELETE ON resource_days
   FOR EACH ROW EXECUTE FUNCTION log_change();
 
 CREATE TRIGGER trg_change_log_resources

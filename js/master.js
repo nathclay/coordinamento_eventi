@@ -4,7 +4,7 @@
 ================================================================ */
 
 const RESOURCE_TYPES = ['ASM','ASI','SAP','BICI','MM','PMA','LDC','PCA','ALTRO'];
-const LOG_TABLES = ['events','resources','resource_days','personnel','anagrafica','resource_type_requirements'];
+const LOG_TABLES = ['events','resources','personnel','anagrafica','resource_type_requirements'];
 
 const MASTER = {
   session: null,
